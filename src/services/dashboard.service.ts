@@ -8,4 +8,5 @@ export const dashboardService = {
   getRecentTransactions: dashboardRepository.getRecentTransactions,
   getUpcomingBills: dashboardRepository.getUpcomingBills,
   getOverdueBills: dashboardRepository.getOverdueBills,
+  getPendingSummary: dashboardRepository.getPendingSummary,
 }

@@ -46,6 +46,7 @@ export function AttachmentsPanel({
             return (
               <li key={attachment.id} className="flex items-center justify-between gap-2 p-2.5">
                 <button
+                  type="button"
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   onClick={() => openAttachment(attachment)}
                 >
@@ -58,6 +59,7 @@ export function AttachmentsPanel({
                   </div>
                 </button>
                 <Button
+                  type="button"
                   variant="ghost"
                   size="icon-sm"
                   className="shrink-0 text-muted-foreground hover:text-destructive"

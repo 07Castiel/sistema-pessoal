@@ -2,10 +2,19 @@ import { useQuery } from "@tanstack/react-query"
 import { dashboardService } from "@/services/dashboard.service"
 import { useAuth } from "@/hooks/use-auth"
 
-export function useDashboard() {
+export interface DashboardPeriod {
+  year: number
+  month: number
+}
+
+export function currentPeriod(): DashboardPeriod {
+  const now = new Date()
+  return { year: now.getFullYear(), month: now.getMonth() + 1 }
+}
+
+export function useDashboard(period: DashboardPeriod = currentPeriod()) {
   const { user } = useAuth()
   const userId = user?.id
-  const now = new Date()
 
   const accounts = useQuery({
     queryKey: ["dashboard", "accounts", userId],
@@ -25,10 +34,17 @@ export function useDashboard() {
     enabled: !!userId,
   })
 
-  const categorySummary = useQuery({
-    queryKey: ["dashboard", "category-summary", userId, now.getFullYear(), now.getMonth() + 1],
+  const expenseByCategory = useQuery({
+    queryKey: ["dashboard", "category-summary", "despesa", userId, period.year, period.month],
     queryFn: () =>
-      dashboardService.getCategorySummary(userId!, now.getFullYear(), now.getMonth() + 1),
+      dashboardService.getCategorySummary(userId!, period.year, period.month, "despesa"),
+    enabled: !!userId,
+  })
+
+  const incomeByCategory = useQuery({
+    queryKey: ["dashboard", "category-summary", "receita", userId, period.year, period.month],
+    queryFn: () =>
+      dashboardService.getCategorySummary(userId!, period.year, period.month, "receita"),
     enabled: !!userId,
   })
 
@@ -50,7 +66,17 @@ export function useDashboard() {
     enabled: !!userId,
   })
 
-  const currentMonth = monthlySummaries.data?.at(-1)
+  const pendingSummary = useQuery({
+    queryKey: ["dashboard", "pending-summary", userId],
+    queryFn: () => dashboardService.getPendingSummary(userId!),
+    enabled: !!userId,
+  })
+
+  // A view de 6 meses (`v_monthly_summary`) sempre reflete até o mês atual do
+  // banco; para o período selecionado usamos a soma direta das categorias,
+  // que é exata para qualquer mês navegado (passado ou presente).
+  const periodIncome = incomeByCategory.data?.reduce((sum, c) => sum + Number(c.total_amount), 0) ?? 0
+  const periodExpense = expenseByCategory.data?.reduce((sum, c) => sum + Number(c.total_amount), 0) ?? 0
 
   return {
     isLoading:
@@ -58,12 +84,19 @@ export function useDashboard() {
     accounts: accounts.data ?? [],
     netWorth: netWorth.data,
     monthlySummaries: monthlySummaries.data ?? [],
-    categorySummary: categorySummary.data ?? [],
+    expenseByCategory: expenseByCategory.data ?? [],
+    incomeByCategory: incomeByCategory.data ?? [],
     recentTransactions: recentTransactions.data ?? [],
     upcomingBills: upcomingBills.data ?? [],
     overdueBills: overdueBills.data ?? [],
-    currentMonthIncome: currentMonth?.total_income ?? 0,
-    currentMonthExpense: currentMonth?.total_expense ?? 0,
-    currentMonthBalance: currentMonth?.balance ?? 0,
+    pendingSummary: pendingSummary.data ?? {
+      payable: 0,
+      receivable: 0,
+      overdueExpense: 0,
+      pendingIncome: 0,
+    },
+    periodIncome,
+    periodExpense,
+    periodBalance: periodIncome - periodExpense,
   }
 }

@@ -138,3 +138,15 @@ export const CATEGORY_ICON_OPTIONS = [
   "droplet",
   "more-horizontal",
 ]
+
+export const COST_CENTER_ICON_OPTIONS = [
+  "folder",
+  "briefcase",
+  "building",
+  "building-2",
+  "home",
+  "car",
+  "target",
+  "wrench",
+  "tag",
+]

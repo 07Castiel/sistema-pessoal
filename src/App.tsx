@@ -18,6 +18,7 @@ import DashboardPage from "@/pages/dashboard/dashboard"
 import AccountsPage from "@/pages/accounts/accounts"
 import CategoriesPage from "@/pages/categories/categories"
 import TransactionsPage from "@/pages/transactions/transactions"
+import TagsPage from "@/pages/tags/tags"
 import CardsPage from "@/pages/cards/cards"
 import RecurringPage from "@/pages/recurring/recurring"
 import InvestmentsPage from "@/pages/investments/investments"
@@ -55,6 +56,7 @@ export default function App() {
                     <Route path="/contas" element={<AccountsPage />} />
                     <Route path="/categorias" element={<CategoriesPage />} />
                     <Route path="/transacoes" element={<TransactionsPage />} />
+                    <Route path="/tags" element={<TagsPage />} />
                     <Route path="/cartoes" element={<CardsPage />} />
                     <Route path="/recorrencias" element={<RecurringPage />} />
                     <Route path="/investimentos" element={<InvestmentsPage />} />

@@ -44,6 +44,12 @@ export type MonthlySummary = Views<"v_monthly_summary">
 export type CategorySummary = Views<"v_category_summary">
 export type NetWorth = Views<"v_net_worth">
 export type CardUsage = Views<"v_card_usage">
+export type TransactionEnriched = Views<"v_transactions_enriched">
+export type CashFlowDaily = Views<"v_cash_flow_daily">
+export type PendingByDueDate = Views<"v_pending_by_due_date">
+
+/** Status derivado exibido na UI: o banco nunca grava "atrasado". */
+export type EffectiveStatus = "pendente" | "pago" | "recebido" | "cancelado" | "atrasado"
 
 export type AccountType = Enums<"account_type">
 export type AccountStatus = Enums<"account_status">

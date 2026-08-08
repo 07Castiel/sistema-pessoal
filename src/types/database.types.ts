@@ -67,6 +67,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "account_reconciliations_adjustment_transaction_id_fkey"
+            columns: ["adjustment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "v_transactions_enriched"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "account_reconciliations_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -415,6 +422,7 @@ export type Database = {
       }
       cost_centers: {
         Row: {
+          active: boolean
           color: string
           created_at: string
           icon: string
@@ -423,6 +431,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          active?: boolean
           color?: string
           created_at?: string
           icon?: string
@@ -431,6 +440,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          active?: boolean
           color?: string
           created_at?: string
           icon?: string
@@ -1090,14 +1100,20 @@ export type Database = {
           category_id: string | null
           cost_center_id: string | null
           created_at: string
+          currency: string
+          deleted_at: string | null
           description: string
           end_date: string | null
           frequency: Database["public"]["Enums"]["recurrence_frequency"]
           id: string
           interval_days: number | null
           last_generated_transaction_id: string | null
+          lead_days: number
           next_run_date: string
+          notes: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"] | null
           start_date: string
+          supplier: string | null
           type: Database["public"]["Enums"]["transaction_type"]
           updated_at: string
           user_id: string
@@ -1109,14 +1125,20 @@ export type Database = {
           category_id?: string | null
           cost_center_id?: string | null
           created_at?: string
+          currency?: string
+          deleted_at?: string | null
           description: string
           end_date?: string | null
           frequency?: Database["public"]["Enums"]["recurrence_frequency"]
           id?: string
           interval_days?: number | null
           last_generated_transaction_id?: string | null
+          lead_days?: number
           next_run_date: string
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
           start_date: string
+          supplier?: string | null
           type: Database["public"]["Enums"]["transaction_type"]
           updated_at?: string
           user_id: string
@@ -1128,14 +1150,20 @@ export type Database = {
           category_id?: string | null
           cost_center_id?: string | null
           created_at?: string
+          currency?: string
+          deleted_at?: string | null
           description?: string
           end_date?: string | null
           frequency?: Database["public"]["Enums"]["recurrence_frequency"]
           id?: string
           interval_days?: number | null
           last_generated_transaction_id?: string | null
+          lead_days?: number
           next_run_date?: string
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
           start_date?: string
+          supplier?: string | null
           type?: Database["public"]["Enums"]["transaction_type"]
           updated_at?: string
           user_id?: string
@@ -1167,6 +1195,13 @@ export type Database = {
             columns: ["last_generated_transaction_id"]
             isOneToOne: false
             referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_rules_last_generated_transaction_id_fkey"
+            columns: ["last_generated_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "v_transactions_enriched"
             referencedColumns: ["id"]
           },
           {
@@ -1325,6 +1360,13 @@ export type Database = {
             referencedRelation: "transactions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "transaction_tags_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "v_transactions_enriched"
+            referencedColumns: ["id"]
+          },
         ]
       }
       transactions: {
@@ -1335,7 +1377,9 @@ export type Database = {
           category_id: string | null
           cost_center_id: string | null
           created_at: string
+          currency: string
           date: string
+          deleted_at: string | null
           description: string
           due_date: string | null
           id: string
@@ -1361,7 +1405,9 @@ export type Database = {
           category_id?: string | null
           cost_center_id?: string | null
           created_at?: string
+          currency?: string
           date?: string
+          deleted_at?: string | null
           description: string
           due_date?: string | null
           id?: string
@@ -1387,7 +1433,9 @@ export type Database = {
           category_id?: string | null
           cost_center_id?: string | null
           created_at?: string
+          currency?: string
           date?: string
+          deleted_at?: string | null
           description?: string
           due_date?: string | null
           id?: string
@@ -1557,6 +1605,24 @@ export type Database = {
           },
         ]
       }
+      v_cash_flow_daily: {
+        Row: {
+          date: string | null
+          inflow: number | null
+          net: number | null
+          outflow: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_net_worth"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       v_category_summary: {
         Row: {
           category_color: string | null
@@ -1635,12 +1701,166 @@ export type Database = {
         }
         Relationships: []
       }
+      v_pending_by_due_date: {
+        Row: {
+          due_date: string | null
+          is_overdue: boolean | null
+          items: number | null
+          total: number | null
+          type: Database["public"]["Enums"]["transaction_type"] | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_net_worth"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      v_transactions_enriched: {
+        Row: {
+          account_color: string | null
+          account_icon: string | null
+          account_id: string | null
+          account_name: string | null
+          amount: number | null
+          card_id: string | null
+          category_color: string | null
+          category_icon: string | null
+          category_id: string | null
+          category_name: string | null
+          category_parent_id: string | null
+          cost_center_color: string | null
+          cost_center_id: string | null
+          cost_center_name: string | null
+          created_at: string | null
+          currency: string | null
+          date: string | null
+          deleted_at: string | null
+          description: string | null
+          due_date: string | null
+          effective_status: string | null
+          id: string | null
+          installment_group_id: string | null
+          installment_number: number | null
+          installment_total: number | null
+          invoice_id: string | null
+          is_adjustment: boolean | null
+          is_overdue: boolean | null
+          notes: string | null
+          paid_date: string | null
+          parent_category_name: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"] | null
+          recurring_id: string | null
+          status: Database["public"]["Enums"]["transaction_status"] | null
+          supplier: string | null
+          tag_ids: string[] | null
+          tags: Json | null
+          type: Database["public"]["Enums"]["transaction_type"] | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "categories_parent_id_fkey"
+            columns: ["category_parent_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "credit_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "v_card_usage"
+            referencedColumns: ["card_id"]
+          },
+          {
+            foreignKeyName: "transactions_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_cost_center_id_fkey"
+            columns: ["cost_center_id"]
+            isOneToOne: false
+            referencedRelation: "cost_centers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "card_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_recurring_id_fkey"
+            columns: ["recurring_id"]
+            isOneToOne: false
+            referencedRelation: "recurring_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_net_worth"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
     }
     Functions: {
+      _next_recurrence_date: {
+        Args: {
+          p_frequency: Database["public"]["Enums"]["recurrence_frequency"]
+          p_from: string
+          p_interval_days: number
+        }
+        Returns: string
+      }
       _transaction_balance_effect: {
         Args: { t: Database["public"]["Tables"]["transactions"]["Row"] }
         Returns: number
       }
+      create_installment_transactions: {
+        Args: {
+          p_account_id?: string
+          p_card_id?: string
+          p_category_id?: string
+          p_cost_center_id?: string
+          p_description: string
+          p_first_due_date: string
+          p_installments: number
+          p_notes?: string
+          p_payment_method?: Database["public"]["Enums"]["payment_method"]
+          p_supplier?: string
+          p_total_amount: number
+          p_type: Database["public"]["Enums"]["transaction_type"]
+        }
+        Returns: string
+      }
+      generate_due_recurrences: { Args: never; Returns: number }
       reconcile_account: {
         Args: {
           p_account_id: string
@@ -1727,6 +1947,9 @@ export type Database = {
         | "anual"
         | "quinzenal"
         | "personalizada"
+        | "bimestral"
+        | "trimestral"
+        | "semestral"
       transaction_status:
         | "pendente"
         | "pago"
@@ -1920,6 +2143,9 @@ export const Constants = {
         "anual",
         "quinzenal",
         "personalizada",
+        "bimestral",
+        "trimestral",
+        "semestral",
       ],
       transaction_status: [
         "pendente",
