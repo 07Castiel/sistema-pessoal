@@ -5,25 +5,27 @@
 > no banco de produção (`execute_sql`) e no repositório local no momento da
 > escrita — não são recordados de memória.
 >
-> **Última atualização:** 2026-08-09, sessão que implementou o quinto e
-> último módulo da Fase 4 (Orçamentos). Ver seção 34 e `docs/MODULO_4.md`
-> Parte 5. Seções 33 documentam os módulos anteriores da Fase 4 (Cartões,
-> Metas, Investimentos, Empréstimos/Financiamentos).
+> **Última atualização:** 2026-08-09, sessão que implementou o sexto
+> módulo da Fase 4 (Relatórios), na sequência da mesma sessão que
+> implementou Orçamento. Ver seção 35 e `docs/MODULO_4.md` Parte 6.
+> Seções 33-34 documentam os módulos anteriores da Fase 4 (Cartões,
+> Metas, Investimentos, Empréstimos/Financiamentos, Orçamentos).
 
 ---
 
 ## 1. Estado atual em uma frase
 
 **FASE 3 CONCLUÍDA e commitada** (`58936f2`, `216e2b4`, `e629d8e`, enviados
-para `origin/develop`). **FASE 4 CONCLUÍDA:** Cartões/Faturas, Metas,
-Investimentos, Empréstimos/Financiamentos e Orçamentos implementados e
-testados (ver seções 33-34). Contas (Fase 1), Categorias (Fase 2),
-Receitas/Despesas (Fase 3, incluindo recorrências, anexos, tags, centros de
-custo e dashboard com dados reais) e todos os módulos da Fase 4 estão
-implementados, testados (funcional, financeiro, segurança multiusuário,
-dark mode, responsividade) e com 0 erros de TypeScript/ESLint e build
-funcionando. Restam Calendário, Relatórios e Configurações (Fase 4,
-ver `docs/HANDOFF_CONTINUIDADE.md`).
+para `origin/develop`). **FASE 4 em andamento, 6 de 8 módulos concluídos:**
+Cartões/Faturas, Metas, Investimentos, Empréstimos/Financiamentos,
+Orçamentos e Relatórios implementados e testados (ver seções 33-35).
+Contas (Fase 1), Categorias (Fase 2), Receitas/Despesas (Fase 3,
+incluindo recorrências, anexos, tags, centros de custo e dashboard com
+dados reais) e os 6 módulos citados da Fase 4 estão implementados,
+testados (funcional, financeiro, segurança multiusuário, dark mode,
+responsividade) e com 0 erros de TypeScript/ESLint e build funcionando.
+**Restam Calendário e Configurações** (Fase 4, ver
+`docs/HANDOFF_CONTINUIDADE.md`).
 
 ---
 
@@ -1135,3 +1137,64 @@ completo em `docs/MODULO_4.md`, Parte 5 (seções 30-36). Resumo:
   é gravada corretamente no banco; só demora a aparecer no sino. Afeta
   igualmente notificações de outros módulos (cartão, meta), não é
   regressão desta sessão.
+
+## 35. Fase 4 — Relatórios (2026-08-09, mesma sessão de Orçamento)
+
+**Sexto módulo da Fase 4: Relatórios.** Diferente de todos os módulos
+anteriores, não criou tabela nem trigger nova — reaproveita as 4 views
+financeiras já existentes (`v_monthly_summary`, `v_category_summary`,
+`v_cash_flow_daily`, `v_net_worth`), as mesmas já usadas pelo Dashboard.
+Detalhamento completo em `docs/MODULO_4.md`, Parte 6 (seções 37-43).
+Resumo:
+
+- **Bug real encontrado e corrigido antes de implementar:** `v_net_worth`
+  estava **inutilizável** para qualquer usuário `authenticated` desde a
+  Fase 1 — dependia de `auth.users` sem `GRANT SELECT` concedido (nem
+  tabela, nem coluna). Confirmado ao vivo no navegador com uma sessão
+  real (`supabase.from('v_net_worth')...` retornava `permission denied
+  for table users`). Consequência: o card "Patrimônio líquido" do
+  Dashboard, em produção desde a Fase 3, sempre mostrou `R$ 0,00`
+  silenciosamente (o erro era engolido pelo fallback `?? 0`, sem checar
+  `isError`). Corrigido com uma migration aditiva mínima
+  (`fix_v_net_worth_auth_users_permission`): a view passou a enumerar o
+  usuário atual via `auth.uid()` em vez de `FROM auth.users`, eliminando
+  a dependência do `GRANT` que nunca existiu. Testado antes/depois (SQL
+  como `authenticated`, dois usuários descartáveis, e sessão real do
+  navegador) — corrigido, isolamento entre usuários preservado (na
+  verdade reforçado: a view não consegue mais nem em tese enumerar outro
+  usuário).
+- **Achado documentado, não corrigido:** `v_monthly_summary`/
+  `v_category_summary` não excluem transações movidas para a lixeira
+  (`deleted_at`) do total — diferente de `v_cash_flow_daily` e do saldo
+  de conta, que excluem corretamente. Não corrigido porque afetaria
+  também o Dashboard e o Orçamento (ambos já consomem essas views);
+  registrado como `Requer confirmação` para decisão futura do usuário.
+- **Reaproveitamento deliberado, não recálculo:** nenhum número de
+  Relatórios usa uma fórmula diferente da que já aparece no Dashboard —
+  só a flexibilidade dos filtros muda (intervalo de mês/ano e intervalo
+  de datas livres, em vez de janelas fixas).
+- **Invalidação (`["reports"]`) espelhando `["dashboard"]`** em todo hook
+  de mutação que já invalidava o dashboard, mais uma lacuna
+  pré-existente corrigida: `useInvalidateLoans`/`useInvalidateFinancings`
+  nunca invalidavam `["dashboard"]`, apesar de afetarem `v_net_worth`.
+- **Testado com cenário controlado** (receita R$1.000, despesas
+  R$300+R$200) em todas as 4 seções da página, incluindo o Patrimônio
+  (confirma a correção do bug ponta a ponta via UI real) — todos os
+  valores bateram exatamente. Filtros de período/mês/data testados com
+  efeito real confirmado (mudança de intervalo altera os números
+  exibidos; intervalo sem dado mostra estado vazio).
+- **Segurança multiusuário testada via UI real** (não só SQL): logout/
+  registro de um segundo usuário no mesmo navegador → `/relatorios`
+  mostra as 4 seções completamente zeradas, nenhum dado do primeiro
+  usuário vazou.
+- **Achado tangencial fora do escopo:** `useLocalStorage("last-account-id")`
+  (formulário de Transações) não é escopado por usuário nem limpo no
+  logout — pode pré-selecionar uma conta de outro usuário/já excluída
+  após trocar de conta no mesmo navegador (bloqueado corretamente por
+  `validate_transaction_references`, não é falha de segurança). Impacto
+  real baixo (app de usuário único); registrado para decisão futura, não
+  corrigido por estar fora do escopo de Transações nesta sessão.
+- TypeScript/ESLint/build: 0 erros (1 warning novo de `exhaustive-deps`
+  apareceu e foi corrigido durante a implementação). Mobile 375px sem
+  overflow, dark mode com tokens já validados. Dados de teste removidos,
+  contagem zero confirmada.

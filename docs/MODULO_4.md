@@ -1,4 +1,4 @@
-# Fase 4 — Cartões, Faturas, Metas, Investimentos, Empréstimos, Financiamentos e Orçamentos
+# Fase 4 — Cartões, Faturas, Metas, Investimentos, Empréstimos, Financiamentos, Orçamentos e Relatórios
 
 > **Parte 1 (seções 1-9): Cartões e Faturas.** Backend (`credit_cards`,
 > `card_invoices`, `v_card_usage`, trigger `recalc_invoice_total`) já
@@ -39,6 +39,18 @@
 > **Nenhuma migration** — mesma classe de achado de ownership de
 > Metas/Investimentos/Empréstimos foi investigada e confirmada sem
 > impacto real (seção 33).
+>
+> **Parte 6 (seções 37-43): Relatórios.** Nenhuma tabela nova — reaproveita
+> as 4 views financeiras já existentes (`v_monthly_summary`,
+> `v_category_summary`, `v_cash_flow_daily`, `v_net_worth`), a mesma
+> fonte já usada pelo Dashboard, por exigência explícita de consistência.
+> **Uma migration real** (`fix_v_net_worth_auth_users_permission`) — bug
+> de infraestrutura encontrado antes de implementar: `v_net_worth`
+> estava quebrada para qualquer usuário `authenticated` desde a Fase 1
+> (dependia de `auth.users` sem `GRANT`), fazendo o card "Patrimônio
+> líquido" do Dashboard mostrar `R$ 0,00` silenciosamente desde sempre.
+> Corrigida com uma troca mínima e aditiva na view, sem tocar nenhuma
+> trigger financeira (seção 38).
 
 ---
 
@@ -972,3 +984,232 @@ de auth pré-existentes) permaneceram intactos.
   solicitado, não implementado.
 - Lacuna de ownership de `budgets.category_id` avaliada e não corrigida
   (seção 33) — decisão registrada, mesma classe dos achados anteriores.
+
+---
+
+# Parte 6 — Relatórios
+
+Sexto e último módulo planejado da Fase 4 a ser implementado nesta
+sequência (Calendário e Configurações continuam pendentes). Diferente
+de todos os módulos anteriores, não existe tabela nova nem trigger nova
+— o módulo é inteiramente uma camada de leitura sobre 4 views que já
+existiam desde a Fase 1 e já eram consumidas pelo Dashboard.
+
+## 37. Decisão central: reaproveitar as views do Dashboard, não recalcular
+
+Requisito explícito do usuário: "evite cálculos divergentes do
+Dashboard" e "não replique no frontend uma lógica que já é calculada
+corretamente pelo banco". `reports.repository.ts` consulta diretamente
+`v_monthly_summary`, `v_category_summary`, `v_cash_flow_daily` e
+`v_net_worth` — as mesmas 4 views de `dashboard.repository.ts` — em vez
+de buscar `transactions` cru e recalcular no frontend. Nenhum número
+exibido em Relatórios tem uma fórmula diferente da que já aparece no
+Dashboard; o que muda é a flexibilidade dos filtros (intervalo de
+período em vez de "últimos 6 meses fixos", data livre em vez de mês
+fechado).
+
+`reports.repository.ts` não importa `dashboard.repository.ts` — nenhum
+repository deste projeto importa outro (cada um é o único ponto de
+contato com o Supabase para seu módulo); a "mesma fonte de verdade" é
+garantida por consultar a mesma view do banco, não por reuso de código
+TypeScript entre repositories.
+
+## 38. Bug real encontrado e corrigido: `v_net_worth` inutilizável
+
+Antes de implementar a seção "Patrimônio", `v_net_worth` foi testada
+como role `authenticated` (metodologia padrão do projeto) e falhou:
+`permission denied for table users`. Investigação (`has_table_privilege`,
+`has_column_privilege`, `information_schema.role_table_grants`)
+confirmou que `authenticated` **nunca teve** `GRANT SELECT` em
+`auth.users` — e a view, apesar de `SECURITY INVOKER` corretamente
+configurado, fazia `FROM auth.users u` só para enumerar o id do usuário
+atual antes das subqueries de agregação.
+
+**Confirmado ao vivo no navegador, com uma sessão real** (não só SQL
+simulado): `supabase.from('v_net_worth').select('*')...` retornava
+`error.message: "permission denied for table users"` para um usuário
+autenticado de verdade. Isso significa que o card "Patrimônio líquido"
+do Dashboard — em produção desde a Fase 3 — **sempre mostrou `R$ 0,00`
+silenciosamente**: `dashboardRepository.getNetWorth` lança o erro, mas
+`dashboard.tsx` usa `netWorth?.net_worth ?? 0`, sem checar
+`isError`. Passou despercebido nas sessões anteriores porque os
+usuários de teste tinham poucos dados e `R$ 0,00` parecia plausível.
+
+**Correção — migration `fix_v_net_worth_auth_users_permission`:** troca
+`FROM auth.users u` por `FROM (select auth.uid() as id) u`. `auth.uid()`
+não depende de nenhum `GRANT`, já é a base de toda policy de RLS do
+projeto. Único consumidor real (`dashboardRepository.getNetWorth`,
+agora também `reportsRepository.getNetWorth`) sempre filtra por
+`user_id = auth.uid()` de qualquer forma — comportamento idêntico para
+todo caller legítimo, e a view fica **mais restritiva** (não consegue
+mais, nem em tese, enumerar outro usuário sem o filtro `WHERE`).
+Nenhuma trigger financeira crítica tocada.
+
+**Testado antes/depois** (SQL como `authenticated`, dois usuários
+descartáveis, e a sessão real do navegador): erro sumiu, valores batem
+com o saldo real das contas, usuário B continua vendo 0 linhas para o
+`user_id` de A mesmo consultando sem `WHERE`, `get_advisors` (security)
+idêntico a antes. Detalhe completo, com a tabela de antes/depois, em
+`docs/BANCO_DE_DADOS.md` seção 32.
+
+## 39. Achado documentado, não corrigido: `deleted_at` inconsistente entre views
+
+Testado com cenário controlado (receita R$1.000, despesas R$300+R$200,
+depois excluindo — soft delete — a despesa de R$300):
+
+- `v_cash_flow_daily` e o saldo de conta (via `_transaction_balance_effect`)
+  **excluem corretamente** a transação apagada do total.
+- `v_monthly_summary` e `v_category_summary` **não excluem** — o total
+  permanece contando a transação já na lixeira.
+- Status `cancelado` é filtrado corretamente em todas as views
+  (`status IN ('pago','recebido')` ou equivalente) — só o soft delete
+  tem esse comportamento inconsistente.
+
+**Decisão:** não alterar `v_monthly_summary`/`v_category_summary`.
+Ambas já são consumidas pelo Dashboard (produção) e por Orçamento
+("realizado"); mudar o filtro alteraria silenciosamente o comportamento
+de módulos já entregues, sem pedido explícito para isso nesta sessão
+(escopo era só Relatórios). Como Relatórios reutiliza deliberadamente
+as mesmas views por consistência com o Dashboard, ele herda o mesmo
+comportamento — não diverge dele, que era o requisito explícito do
+usuário. Registrado como `Requer confirmação` (`REGRAS_DE_NEGOCIO.md`
+seção 22) para decisão futura, possivelmente junto com uma revisão do
+Dashboard e do Orçamento.
+
+## 40. Escopo do módulo e filtros implementados
+
+Página `/relatorios`, quatro seções independentes, cada uma com seu
+próprio filtro real (todos com efeito comprovado, nenhum controle
+decorativo):
+
+- **Visão geral do período** — dois `<input type="month">` ("De"/"Até"),
+  padrão últimos 6 meses. KPIs (receita/despesa/líquido/taxa de
+  economia) somados sobre `v_monthly_summary` já buscada (sem filtro no
+  banco, recortada em memória — dataset pequeno por natureza, um app
+  pessoal não acumula milhares de meses). Gráfico de barras
+  receita×despesa para o mesmo intervalo.
+- **Por categoria** — navegador de mês/ano único (mesmo padrão prev/
+  próximo do Dashboard/Orçamento) + abas despesa/receita. Pizza +
+  ranking com percentual do total, via `v_category_summary`.
+- **Fluxo de caixa** — dois `<input type="date">` ("De"/"Até"), padrão
+  últimos 30 dias, filtro nativo de `v_cash_flow_daily`
+  (`.gte`/`.lte` em `date`). Gráfico combinado (barras de entrada/saída
+  + linha de líquido).
+- **Patrimônio** — sem filtro (é sempre o instante atual). Total +
+  detalhamento por componente (contas, investimentos, a receber, a
+  pagar, financiamentos), via `v_net_worth` — mais detalhado que o
+  único número que o Dashboard mostra.
+
+**Sem filtro por conta** — nenhuma das 4 views aceita esse filtro sem
+recalcular no frontend (o que duplicaria a lógica que a view já
+centraliza, indo contra o requisito de não duplicar). Decisão
+deliberada, não omissão — documentada aqui e em
+`REGRAS_DE_NEGOCIO.md` seção 22.
+
+## 41. Invalidação — `["reports"]` espelhando `["dashboard"]`, mais uma lacuna corrigida
+
+`["reports"]` adicionada a todo hook de mutação que já invalidava
+`["dashboard"]`: `useInvalidateTransactions`, `useInvalidateAccounts`,
+`useInvalidateCardInvoices`, `useInvalidateInvestments`,
+`useInvalidateInvestmentMovements`, `useInvalidateRecurringRules` — mesmo
+princípio já usado para `["budgets"]` na Parte 5.
+
+**Lacuna pré-existente corrigida junto:** `useInvalidateLoans` e
+`useInvalidateFinancings` **nunca invalidavam `["dashboard"]`**, apesar
+de `v_net_worth` somar `loans.remaining_balance`/
+`financings.remaining_balance` — pagar ou quitar um empréstimo/
+financiamento não atualizava o patrimônio líquido do Dashboard sem um
+reload manual. Mudança de 2 linhas por arquivo, mesmo padrão das outras
+6 invalidações já existentes — não é uma decisão de arquitetura nova,
+é completar um padrão que já existia e faltou em 2 dos 8 módulos que
+afetam `v_net_worth`.
+
+## 42. Testes financeiros e de segurança (banco de produção, usuários descartáveis)
+
+Cenário controlado, role `authenticated`: receita R$1.000 (Salário),
+despesa R$300 (Moradia), despesa R$200 (Alimentação), mesma data.
+
+| Seção | Esperado | Obtido | Resultado |
+|---|---|---|---|
+| Visão geral | Receitas 1.000 / Despesas 500 / Líquido 500 / Taxa 50% | Idêntico | ✅ |
+| Por categoria (despesa) | Moradia 60% (R$300), Alimentação 40% (R$200) | Idêntico | ✅ |
+| Fluxo de caixa | Entradas 1.000 / Saídas 500 / Líquido 500 | Idêntico | ✅ |
+| Patrimônio | `net_worth = 500` (só saldo de conta, sem outros ativos/passivos) | `500,00` | ✅ (confirma a correção da seção 38 ponta a ponta, via UI real) |
+| Filtro de mês (categoria) para um mês sem dados | "Sem despesas neste período" | ✅ | ✅ |
+| Filtro de data inválido (Até < De) no fluxo de caixa | R$0,00 em tudo, estado vazio | ✅ | ✅ |
+| Filtro de intervalo mensal restrito a 1 mês | KPIs inalterados (todo o dado cai no mês), gráfico com 1 barra | ✅ | ✅ |
+
+**Segurança / RLS multiusuário — via UI real** (não só SQL): usuário A
+com o cenário acima → logout real (botão "Sair") → usuário B recém-
+registrado, sem nenhuma transação → `/relatorios` mostra **todas as 4
+seções zeradas/vazias**, nenhum valor de A vazou em nenhuma view.
+
+**Achado tangencial, fora do escopo, não corrigido:** durante os testes
+foi descoberto que `useLocalStorage("last-account-id")` (usado pelo
+formulário de Transações para lembrar a última conta usada) **persiste
+entre usuários diferentes no mesmo navegador** — não é limpo no login/
+logout nem escopado por usuário. Se o id lembrado não pertencer (ou não
+existir mais para) o usuário atual, o formulário pré-seleciona uma
+conta inválida e o `submit` falha com "Conta inválida, excluída ou
+pertencente a outro usuário." (bloqueio correto de
+`validate_transaction_references`, não uma falha de segurança). Impacto
+real limitado — só se manifesta se o mesmo navegador for usado por mais
+de uma conta Supabase distinta, cenário incomum para este app pessoal
+de usuário único. Não corrigido por estar fora do escopo desta sessão
+(Transações não foi tocado); registrado aqui para uma sessão futura
+avaliar se vale a pena escopar `last-account-id` por `user.id` ou
+limpá-lo no logout.
+
+## 43. Validação técnica e arquivos
+
+TypeScript (`tsc -b --noEmit`): 0 erros. ESLint: 0 erros, 4 warnings
+pré-existentes (mesmos de sempre) — 1 warning novo de
+`react-hooks/exhaustive-deps` apareceu e foi corrigido durante a
+implementação (`useMonthRange`, dependências do `useMemo` trocadas de
+campos individuais para os objetos `from`/`to` inteiros). Build de
+produção: sucesso (~4min, bundle 1,60 MB / 437 KB gzip). Mobile 375px
+sem overflow horizontal, dark mode com os mesmos tokens de cor já
+validados em Orçamento/Dashboard. Todos os usuários e dados de teste
+removidos, contagem zero confirmada.
+
+**Novos:**
+```
+src/repositories/reports.repository.ts   4 métodos, um por view
+src/services/reports.service.ts          passthrough
+src/hooks/use-reports.ts                 useMonthlySummariesQuery, useMonthRange,
+                                          useCategorySummaryQuery, useCashFlowQuery,
+                                          useNetWorthQuery, helpers de MonthPoint
+```
+
+**Modificados:**
+```
+src/pages/reports/reports.tsx        ComingSoon → página completa
+src/hooks/use-transactions.ts        + ["reports"] em useInvalidateTransactions
+src/hooks/use-accounts.ts            + ["reports"]
+src/hooks/use-card-invoices.ts       + ["reports"]
+src/hooks/use-investments.ts         + ["reports"]
+src/hooks/use-investment-movements.ts + ["reports"]
+src/hooks/use-recurring-rules.ts     + ["reports"]
+src/hooks/use-loans.ts               + ["dashboard"] e ["reports"] (lacuna corrigida, seção 41)
+src/hooks/use-financings.ts          + ["dashboard"] e ["reports"] (lacuna corrigida, seção 41)
+docs/MODULO_4.md                     esta seção (Parte 6)
+docs/BANCO_DE_DADOS.md               seções 3, 7 e nova seção 32
+docs/REGRAS_DE_NEGOCIO.md            nova seção 22 + resumo final
+docs/CONTEXTO_PROJETO.md             novo histórico
+```
+
+**Migration:** `fix_v_net_worth_auth_users_permission` — ver seção 38 e
+`docs/BANCO_DE_DADOS.md` seção 32 para o SQL completo.
+
+## Pendências não bloqueantes (Relatórios)
+
+- Sem filtro por conta (seção 40) — decisão deliberada, não omissão.
+- `v_monthly_summary`/`v_category_summary` não excluem transações na
+  lixeira do total (seção 39) — achado documentado, correção requer
+  decisão do usuário por afetar Dashboard e Orçamento também.
+- `last-account-id` no `localStorage` não é escopado por usuário nem
+  limpo no logout (seção 42) — achado tangencial de Transações, fora do
+  escopo desta sessão.
+- Sem exportação (CSV/PDF/Excel) — não implementada nesta sessão;
+  avaliar necessidade real antes de adicionar uma biblioteca nova (regra
+  do projeto de não adicionar dependência sem necessidade comprovada).

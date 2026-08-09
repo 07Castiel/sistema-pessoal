@@ -28,8 +28,8 @@ migration `0032`, correção de exposição desnecessária).
 
 ## 3. Migrations conhecidas
 
-35 migrations aplicadas (`0001`–`0035`), nenhuma apagada, faixas conforme
-`docs/CONTEXTO_PROJETO.md` seção 5:
+37 migrations aplicadas (`0001`–`0036` + 1 sem prefixo numérico), nenhuma
+apagada, faixas conforme `docs/CONTEXTO_PROJETO.md` seção 5:
 
 | Faixa | Conteúdo |
 |---|---|
@@ -40,6 +40,7 @@ migration `0032`, correção de exposição desnecessária).
 | `0034` | `revoke_public_execute_legacy_trigger_functions` — hardening de `EXECUTE` (seção 31) |
 | `0035` | `cost_centers_active_flag` — coluna `active` em `cost_centers` |
 | `0036` | `validate_transaction_invoice_ownership` — Fase 4, ownership de `invoice_id` (seção 31) |
+| `fix_v_net_worth_auth_users_permission` | Fase 4, módulo Relatórios — corrige `v_net_worth` quebrada (bug real, não vulnerabilidade), seção 32. Aplicada sem prefixo numérico por engano (deveria ser `0037_...`) — funcionalmente idêntica, só o nome foge da convenção. |
 
 Este documento **não altera nem cria nenhuma migration**. Qualquer
 mudança de schema deve passar por `list_migrations` do MCP do Supabase
@@ -130,15 +131,20 @@ referência quebrada.
 |---|---|---|
 | `v_monthly_summary` | `user_id, year, month, total_income, total_expense, balance` | Gráfico de barras do dashboard (`dashboardRepository.getMonthlySummaries`) |
 | `v_category_summary` | `user_id, year, month, category_id, category_name, category_icon, category_color, category_type, total_amount` | Gráfico de pizza do dashboard, por tipo (`getCategorySummary`) |
-| `v_net_worth` | `user_id, total_accounts, total_investments, total_payable_loans, total_receivable_loans, total_financings, net_worth` | `dashboardRepository.getNetWorth` — patrimônio líquido |
-| `v_card_usage` | `card_id, user_id, name, credit_limit, used_amount, available_limit` | Sem consumidor no frontend ainda (módulo Cartões não implementado) |
+| `v_net_worth` | `user_id, total_accounts, total_investments, total_payable_loans, total_receivable_loans, total_financings, net_worth` | `dashboardRepository.getNetWorth`, `reportsRepository.getNetWorth` — patrimônio líquido. **Corrigida na Fase 4/Relatórios — ver seção 32, era inutilizável para qualquer usuário `authenticated` antes da correção.** |
+| `v_card_usage` | `card_id, user_id, name, credit_limit, used_amount, available_limit` | `credit-cards.repository.ts` (Fase 4, Cartões) |
 | `v_transactions_enriched` | Todas as colunas de `transactions` + `account_name/color/icon`, `category_name/color/icon/parent_id/parent_category_name`, `cost_center_name/color`, `tags` (jsonb), `tag_ids` (uuid[]), `is_overdue`, `effective_status` | Listagem principal de Transações, dashboard (recentes/a vencer/atrasadas) |
-| `v_cash_flow_daily` | `user_id, date, inflow, outflow, net` | Sem consumidor no frontend ainda (base pronta para futuro módulo de Fluxo de Caixa) |
+| `v_cash_flow_daily` | `user_id, date, inflow, outflow, net` | `reportsRepository.getCashFlow` (Fase 4, Relatórios) — único filtro `deleted_at IS NULL` entre as 4 views financeiras, ver seção 32 |
 | `v_pending_by_due_date` | `user_id, type, due_date, is_overdue, items, total` | `dashboardRepository.getPendingSummary` — 4 KPIs de pendências |
 
 `security_invoker = true` confirmado em `CONTEXTO_PROJETO.md` seção 9 —
 todas respeitam o RLS das tabelas base, nenhuma vaza dado entre usuários
-mesmo sendo consultadas diretamente.
+mesmo sendo consultadas diretamente. **Isso não significa que todas
+funcionavam** — `v_net_worth` tinha `security_invoker = true` corretamente
+configurado, mas dependia de uma tabela (`auth.users`) sem `GRANT` para
+`authenticated`, então toda consulta como usuário real falhava com
+`permission denied` (não é uma falha de isolamento entre usuários, é uma
+falha de acesso — ver seção 32).
 
 ## 8. Functions (todas em `public`)
 
@@ -734,3 +740,113 @@ sem `EXECUTE` concedido: `normalize_transaction_paid_date`,
 `0034` nem revogar `EXECUTE` de `_transaction_balance_effect` para
 `authenticated` sem repetir a análise completa desta seção e a bateria
 de regressão financeira.
+
+## 32. Relatórios (Fase 4) — módulo e bug real corrigido em `v_net_worth`
+
+### Bug encontrado e corrigido: `v_net_worth` inutilizável para qualquer usuário `authenticated`
+
+Antes de implementar o "Patrimônio" do módulo de Relatórios, `v_net_worth`
+foi testada como role `authenticated` (mesma metodologia de sempre) e
+falhou com:
+
+```
+ERROR: 42501: permission denied for table users
+HINT: Grant the required privileges to the current role with: GRANT SELECT ON auth.users TO authenticated;
+```
+
+**Causa raiz:** a view (`SECURITY INVOKER`) fazia `FROM auth.users u` só
+para enumerar o `id` do usuário atual antes de agregar `accounts`/
+`investments`/`loans`/`financings` por subquery correlacionada. `authenticated`
+**nunca teve** `GRANT SELECT` em `auth.users` (confirmado via
+`has_table_privilege`/`has_column_privilege`, nem no nível de tabela nem
+de coluna) — então, sendo `SECURITY INVOKER`, toda consulta a
+`v_net_worth` como usuário real falhava.
+
+**Impacto real, confirmado ao vivo no navegador:** o card "Patrimônio
+líquido" do Dashboard (já em produção desde a Fase 3) sempre mostrou
+`R$ 0,00` **silenciosamente** — `dashboardRepository.getNetWorth` lança o
+erro, mas `dashboard.tsx` usa `netWorth?.net_worth ?? 0`, então a UI
+nunca exibiu nem um erro visível nem o valor real. Passou despercebido
+em todas as sessões anteriores porque os usuários de teste descartáveis
+usados para validar Investimentos/Empréstimos/Financiamentos tinham
+poucos dados e o fallback `0` coincidia, por acaso, com um resultado
+plausível.
+
+**Correção — migration `fix_v_net_worth_auth_users_permission`:**
+`CREATE OR REPLACE VIEW` trocando `FROM auth.users u` por
+`FROM (select auth.uid() as id) u`. `auth.uid()` já é a função usada por
+toda policy de RLS do projeto, não depende de nenhum `GRANT` adicional.
+Único consumidor real (`dashboardRepository.getNetWorth`, agora também
+`reportsRepository.getNetWorth`) sempre filtra por
+`user_id = auth.uid()` de qualquer forma — o comportamento é idêntico
+para todo caller legítimo, e a view passa a **nunca poder enumerar
+outro usuário**, mesmo sem o filtro `WHERE user_id = ...` (mais
+restritiva que antes, não menos). Nenhuma trigger financeira crítica foi
+tocada; migration puramente de leitura/agregação.
+
+**Testado antes/depois, com usuários descartáveis:**
+
+| Cenário | Antes | Depois |
+|---|---|---|
+| Usuário A consulta `v_net_worth` (SQL, role `authenticated`) | `permission denied for table users` | `total_accounts=800,00`, `net_worth=800,00` (bate com saldo real da conta) |
+| Usuário A consulta via `supabase-js` real (browser, sessão real) | `error.message = "permission denied for table users"` | `error: null`, dados corretos |
+| Usuário B consulta `v_net_worth` sem filtro `WHERE` (SQL) | N/A (nem A conseguia) | Só a própria linha de B (zeros) — nunca a de A |
+| Usuário B consulta explicitamente `WHERE user_id = <A>` | N/A | 0 linhas |
+| `get_advisors` (security) após a migration | — | Idêntico a antes, só o warning pré-existente `auth_leaked_password_protection` |
+| Dashboard real (usuário de teste no navegador) | Patrimônio líquido sempre `R$ 0,00` | Reflete o saldo real das contas somado a investimentos/empréstimos/financiamentos |
+
+### Achado documentado, não corrigido: `deleted_at` inconsistente entre as 4 views financeiras
+
+Testado com um cenário controlado (receita R$1.000, duas despesas pagas
+de R$300 e R$200, todas na mesma data) e depois excluindo (soft delete)
+uma das despesas:
+
+| View | Filtra `deleted_at IS NULL`? | Resultado após excluir a despesa de R$300 |
+|---|---|---|
+| `v_cash_flow_daily` | ✅ Sim | `outflow` cai de 500 para 200 (correto) |
+| `v_pending_by_due_date` | ✅ Sim | (não testado neste cenário, mas filtro presente no `WHERE`) |
+| `v_monthly_summary` | ❌ Não | `total_expense` permanece 500 (não reflete a exclusão) |
+| `v_category_summary` | ❌ Não | `total_amount` da categoria permanece 500 (não reflete a exclusão) |
+| Saldo da conta (`accounts.current_balance`, via `_transaction_balance_effect`) | ✅ Sim (`deleted_at is not null → efeito 0`) | Reflete corretamente a exclusão |
+
+**Status `cancelado` funciona corretamente em todas as views** (filtrado
+por `status IN ('pago','recebido')` ou equivalente) — só o soft delete
+(`deleted_at`) tem esse comportamento inconsistente entre views.
+
+**Decisão desta sessão:** não alterar `v_monthly_summary`/
+`v_category_summary` para adicionar `deleted_at IS NULL`. Motivo: essas
+duas views já são consumidas em produção pelo Dashboard (gráfico de
+barras e de pizza) e agora também por Orçamento (`v_category_summary`
+como "realizado") — alterar o filtro mudaria silenciosamente o
+comportamento de 3 módulos já entregues, sem pedido explícito do
+usuário para essa sessão (escopo era Relatórios). O módulo de Relatórios
+**reutiliza deliberadamente as mesmas views** por consistência com o
+Dashboard (requisito explícito: "evite cálculos divergentes do
+Dashboard") — logo herda o mesmo comportamento, não diverge dele.
+**Registrado como `Requer confirmação`** para uma sessão futura decidir,
+com o usuário, se as 2 views devem ganhar o filtro `deleted_at IS NULL`
+(o que exigiria revisar Dashboard e Orçamento juntos, não só Relatórios).
+
+### Arquitetura do módulo
+
+`reports.repository.ts` — ponto de contato próprio do módulo (não
+importa `dashboard.repository.ts`, seguindo o padrão de nenhum
+repository deste projeto importar outro), consultando as mesmas 4 views:
+`v_monthly_summary` (sem filtro de período — todas as linhas do usuário,
+o hook recorta o intervalo em memória, dataset naturalmente pequeno),
+`v_category_summary` (um mês/ano por vez, mesmo padrão de Orçamento/
+Dashboard), `v_cash_flow_daily` (intervalo de datas nativo via
+`.gte`/`.lte`, já suportado pela view), `v_net_worth` (sem filtro,
+sempre 1 linha).
+
+**Invalidação:** `["reports"]` adicionada a todo hook de mutação que já
+invalidava `["dashboard"]` (transações, contas, faturas de cartão,
+investimentos, movimentações de investimento, recorrências) — mesmo
+princípio de `["budgets"]` em `useInvalidateTransactions`. Também
+corrigida uma lacuna pré-existente: `useInvalidateLoans`/
+`useInvalidateFinancings` **nunca invalidavam `["dashboard"]`**, apesar
+de `v_net_worth` somar `loans.remaining_balance`/
+`financings.remaining_balance` — o patrimônio líquido do Dashboard podia
+ficar desatualizado após pagar/quitar um empréstimo ou financiamento até
+um reload manual. Corrigido junto (mesmo padrão das outras 6
+invalidações, mudança de 2 linhas por arquivo).

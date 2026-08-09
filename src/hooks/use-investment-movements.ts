@@ -13,6 +13,7 @@ function useInvalidateInvestmentMovements() {
     queryClient.invalidateQueries({ queryKey: [KEY] })
     queryClient.invalidateQueries({ queryKey: ["investments"] })
     queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+    queryClient.invalidateQueries({ queryKey: ["reports"] })
   }
 }
 

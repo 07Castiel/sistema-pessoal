@@ -32,6 +32,7 @@ function useInvalidateAccounts() {
   return () => {
     queryClient.invalidateQueries({ queryKey: [ACCOUNTS_KEY] })
     queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+    queryClient.invalidateQueries({ queryKey: ["reports"] })
   }
 }
 

@@ -8,10 +8,13 @@ import type { InstallmentPaymentFormValues } from "@/schemas/installment-payment
 
 const KEY = "financings"
 
+/** `v_net_worth` (dashboard/relatórios) soma `remaining_balance` dos financiamentos. */
 function useInvalidateFinancings() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: [KEY] })
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+    queryClient.invalidateQueries({ queryKey: ["reports"] })
   }
 }
 
