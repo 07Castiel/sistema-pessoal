@@ -7,12 +7,15 @@
 > `pg_get_functiondef`, `information_schema`) e leitura do código real no
 > momento da escrita — nada foi inventado.
 >
-> **Escrito em:** 2026-08-09, encerramento de sessão por limite de
-> contexto (~90%). Sessão dedicada exclusivamente a este handoff —
-> **nenhum código funcional, banco, migration ou refactor foi alterado**
-> (uma edição órfã e não commitada de um início abandonado do módulo
-> Planejamento/Orçamento foi revertida antes de escrever este documento —
-> ver seção 12).
+> **Atualizado em:** 2026-08-09, sessão seguinte à do handoff original.
+> Esta sessão implementou **Planejamento/Orçamento** (quinto e último
+> módulo da Fase 4) por completo — repository → service → hook →
+> componentes → página, com testes financeiros e de segurança reais no
+> banco de produção e testes de UI no navegador (desktop, mobile 375px,
+> dark mode). Ver seção 13.1 (atualizada, agora "CONCLUÍDO") e
+> `docs/MODULO_4.md` Parte 5 para o detalhamento completo. A seção 12
+> abaixo é um registro histórico da sessão anterior (mantida por
+> completude, não é mais o estado atual).
 
 ---
 
@@ -51,19 +54,23 @@
 
 ## 2. Estado atual do Git
 
-Confirmado nesta sessão, imediatamente antes de escrever este documento:
+Confirmado ao final desta sessão:
 
 ```
 branch atual:      develop
-working tree:      limpo
-HEAD local:         8a0c9f4
-origin/develop:     8a0c9f4  (idêntico ao HEAD local — 0 ahead, 0 behind)
-origin/main:        eb92bfa  (intacta, não recebeu nenhum push desde o commit inicial)
+working tree:      limpo (após o commit de documentação abaixo)
+HEAD local:         (commit de docs sobre cad741d — confira com git log -3)
+origin/develop:     idêntico ao HEAD local
+origin/main:        eb92bfa  (intacta, nenhum push desde o commit inicial)
 ```
 
-Histórico completo (mais recente primeiro):
+Histórico (mais recente primeiro):
 
 ```
+<novo>   docs: atualiza handoff apos modulo de planejamento e orcamento
+cad741d  feat(planejamento): implementa modulo de orcamento
+cb22baa  chore: trigger Vercel deployment
+86c68dc  docs: prepara handoff para continuidade da fase 4
 8a0c9f4  feat(financeiro): implementa emprestimos e financiamentos
 820cc56  feat(financeiro): implementa investimentos
 a1cdc99  feat(financeiro): implementa metas financeiras
@@ -74,14 +81,18 @@ e629d8e  docs: adiciona documentação de arquitetura, banco e regras
 eb92bfa  feat: initial finance management system
 ```
 
-Todos os 8 commits confirmados existentes via `git log`. `origin/develop`
-confirmado sincronizado com o HEAD local via `git ls-remote origin`. Não
-há nenhum trabalho local não commitado nem não documentado — **nenhuma
-divergência encontrada**.
-
-**Próximo commit esperado:** este handoff (`docs: prepara handoff para
-continuidade da fase 4`), único arquivo alterado:
-`docs/HANDOFF_CONTINUIDADE.md`.
+**Nota para a próxima sessão:** o commit `cad741d` (módulo de
+Planejamento/Orçamento completo — repository, service, hooks,
+componentes, página, docs) e `cb22baa` (trigger de deploy Vercel, sem
+mudança de código) já estavam em `origin/develop` quando esta sessão
+verificou o estado do repositório pela segunda vez — evidência de que
+o trabalho de implementação já havia sido commitado e enviado numa
+passagem anterior desta mesma sessão (antes de uma retomada/retry). Esta
+sessão apenas confirmou a integridade do commit (`git diff cad741d`
+vazio para todos os arquivos de código e documentação já cobertos) e
+completou a única lacuna real: `docs/HANDOFF_CONTINUIDADE.md` não fazia
+parte de `cad741d`, por isso foi atualizado e commitado separadamente
+agora. Não há trabalho duplicado nem divergência de conteúdo.
 
 ---
 
@@ -96,16 +107,16 @@ continuidade da fase 4`), único arquivo alterado:
 | Fase 4 — Metas | ✅ CONCLUÍDA | Commit `a1cdc99`, sem migration |
 | Fase 4 — Investimentos | ✅ CONCLUÍDA | Commit `820cc56`, sem migration |
 | Fase 4 — Empréstimos/Financiamentos | ✅ CONCLUÍDA | Commit `8a0c9f4`, sem migration |
-| Fase 4 — Planejamento/Orçamento | ⛔ NÃO IMPLEMENTADO | Próximo — backend já investigado nesta sessão (seção 7.1) |
-| Fase 4 — Calendário | ⛔ NÃO IMPLEMENTADO | Análise preliminar seção 7.2 |
-| Fase 4 — Relatórios | ⛔ NÃO IMPLEMENTADO | Análise preliminar seção 7.3 |
-| Fase 4 — Configurações | ⛔ NÃO IMPLEMENTADO | Análise preliminar seção 7.4 |
+| Fase 4 — Planejamento/Orçamento | ✅ CONCLUÍDA | Esta sessão, sem migration — ver seção 13.1 e `MODULO_4.md` Parte 5 |
+| Fase 4 — Calendário | ⛔ NÃO IMPLEMENTADO | Próximo — análise preliminar seção 13.2 |
+| Fase 4 — Relatórios | ⛔ NÃO IMPLEMENTADO | Análise preliminar seção 13.3 |
+| Fase 4 — Configurações | ⛔ NÃO IMPLEMENTADO | Análise preliminar seção 13.4 |
 
-Confirmado via `grep ComingSoon src/pages/**` nesta sessão: **4 páginas**
-ainda são `ComingSoon` — `src/pages/planning/planning.tsx`,
-`src/pages/calendar/calendar.tsx`, `src/pages/reports/reports.tsx`,
-`src/pages/settings/settings.tsx`. Todas as outras (incluindo
-`src/pages/loans/loans.tsx`) já são páginas completas.
+Confirmado no início desta sessão: **4 páginas** eram `ComingSoon` —
+`src/pages/planning/planning.tsx`, `src/pages/calendar/calendar.tsx`,
+`src/pages/reports/reports.tsx`, `src/pages/settings/settings.tsx`.
+Ao final desta sessão, `planning.tsx` passou a ser página completa —
+**restam 3** (Calendário, Relatórios, Configurações).
 
 ---
 
@@ -443,7 +454,22 @@ de Planejamento/Orçamento, com testes completos.
 
 ## 13. Análise técnica dos 4 módulos restantes — SEM IMPLEMENTAR NADA
 
-### 13.1 Planejamento/Orçamento — **já investigado nesta sessão, pronto para começar**
+### 13.1 Planejamento/Orçamento — ✅ CONCLUÍDO nesta sessão
+
+Implementado por completo (`/planejamento`): CRUD de orçamento por
+categoria/mês/ano, "realizado" derivado ao vivo de `v_category_summary`
+(mesma fonte do Dashboard), percentual/saldo restante/faixa de saúde
+(verde/amarelo/vermelho, limiares 50/90%) sempre calculados na
+renderização, KPIs, estados vazio/loading, mobile, dark mode. Testado
+com dados financeiros reais (cascata de alertas 50→100%, monotonicidade)
+e segurança multiusuário (achado de ownership em `category_id` avaliado
+e confirmado sem impacto real, sem migration). Detalhamento completo em
+`docs/MODULO_4.md` Parte 5 (seções 30-36) — **não repita esta
+investigação**, a análise abaixo é o registro histórico de antes da
+implementação.
+
+<details>
+<summary>Investigação original (antes da implementação) — histórico</summary>
 
 - **Tabela:** `budgets` — `user_id`, `category_id` (FK `ON DELETE
   CASCADE`, diferente do padrão `SET NULL` de outras tabelas),
@@ -502,6 +528,8 @@ de Planejamento/Orçamento, com testes completos.
   "realizado" de todos os orçamentos do período numa query só, evitando
   N+1 — mesmo cuidado já tomado em `countUsageBatch` de Tags/Centros de
   Custo).
+
+</details>
 
 ### 13.2 Calendário — análise preliminar, não investigado a fundo
 
@@ -611,21 +639,33 @@ monthly_goal, annual_goal, created_at, updated_at
 
 ## 14. Ordem de implementação recomendada
 
-1. **Planejamento/Orçamento** — já investigado nesta sessão (seção 13.1),
-   é o único módulo restante com investigação de backend praticamente
-   pronta. Menor complexidade que Calendário/Relatórios (tabela única,
-   sem tabela filha, sem lacuna de ownership para investigar).
-2. **Calendário** — depende de entender bem os módulos já implementados
-   (é uma camada de agregação sobre eles), por isso vem depois.
-3. **Relatórios** — mesma razão; também se beneficia de Planejamento já
-   existir (mais uma fonte de dado para os relatórios).
-4. **Configurações** — menor risco financeiro, mas precisa de
-   esclarecimentos (seção 13.4) antes de codificar; deixado por último
-   de propósito.
+1. ~~**Planejamento/Orçamento**~~ — ✅ CONCLUÍDO nesta sessão (seção
+   13.1).
+2. **Relatórios** — recomendado como próximo módulo. Views já existentes
+   e documentadas (`v_monthly_summary`, `v_category_summary`,
+   `v_net_worth`, `v_cash_flow_daily` sem consumidor ainda,
+   `v_pending_by_due_date`) cobrem a maior parte do que um relatório
+   precisa: reaproveitar o mesmo `dashboardRepository`/`v_category_summary`
+   já validado nesta sessão para orçamento, mantendo a mesma fonte de
+   verdade em todas as telas (regra explícita do usuário: "evite
+   cálculos divergentes do Dashboard"). Menor incerteza de design que
+   Calendário (que precisa agregar 5+ fontes heterogêneas sem view
+   pronta) e menor necessidade de esclarecimento prévio que
+   Configurações (que tem uma ambiguidade real sobre `profiles.theme`
+   vs. `next-themes`, seção 13.4).
+3. **Calendário** — maior complexidade de agregação (sem tabela de
+   eventos dedicada, precisa juntar `transactions.due_date`,
+   `card_invoices.due_date`, parcelas de empréstimo/financiamento,
+   `goals.target_date`); investigar viabilidade de projetar
+   `recurring_rules` várias ocorrências à frente antes de codificar.
+4. **Configurações** — menor risco financeiro, mas precisa investigar
+   `theme-provider.tsx`/`use-auth.ts` antes de decidir se
+   `profiles.theme` e `next-themes` são sincronizados ou dois sistemas
+   paralelos (seção 13.4); deixado por último de propósito.
 
 A próxima sessão pode reordenar se, durante a investigação de fato,
-encontrar um motivo técnico concreto — mas comece por Planejamento/
-Orçamento, que já tem a análise pronta nesta seção.
+encontrar um motivo técnico concreto — mas Relatórios é a recomendação
+desta sessão, com a razão registrada acima.
 
 ---
 
@@ -677,13 +717,18 @@ fonte de verdade de Investimentos).
 
 ## CHECKLIST — PRÓXIMA SESSÃO
 
+Próximo módulo recomendado: **Relatórios** (seção 14). Planejamento/
+Orçamento está concluído — não repita a implementação, só reutilize
+`v_category_summary`/`dashboardRepository` como fonte de verdade.
+
 - [ ] Ler este arquivo (`HANDOFF_CONTINUIDADE.md`) por completo
 - [ ] Confirmar `git branch --show-current`, `git status`, `git log -10`
 - [ ] Confirmar `git ls-remote origin` (branch `develop` = HEAD local;
       `main` = `eb92bfa`)
 - [ ] Confirmar working tree limpo
-- [ ] Ler a parte relevante de `docs/MODULO_4.md` (seção 13.1 deste
-      handoff já resume Planejamento/Orçamento)
+- [ ] Ler a parte relevante de `docs/MODULO_4.md` (seção 13.3 deste
+      handoff resume Relatórios; Parte 5 documenta Orçamento, já
+      concluído)
 - [ ] Inspecionar o banco real do módulo escolhido antes de codificar
       (mesmo que este handoff já tenha uma análise — confirmar que nada
       mudou)
