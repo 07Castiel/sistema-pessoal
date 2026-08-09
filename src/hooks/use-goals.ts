@@ -8,10 +8,12 @@ import type { Goal } from "@/types"
 
 const KEY = "goals"
 
+/** `target_date` alimenta o Calendário — qualquer mutação de meta invalida os dois. */
 function useInvalidateGoals() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: [KEY] })
+    queryClient.invalidateQueries({ queryKey: ["calendar"] })
   }
 }
 

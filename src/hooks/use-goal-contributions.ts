@@ -8,12 +8,14 @@ import type { GoalContributionFormValues } from "@/schemas/goal.schema"
 const KEY = "goal-contributions"
 
 /** Um aporte/retirada muda `goals.current_amount` (e possivelmente o
- * status, via `check_goal_completion`) — sempre invalida os dois. */
+ * status, via `check_goal_completion`) — o status de conclusão também
+ * aparece no Calendário (evento de meta), por isso invalida os três. */
 function useInvalidateGoalContributions() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: [KEY] })
     queryClient.invalidateQueries({ queryKey: ["goals"] })
+    queryClient.invalidateQueries({ queryKey: ["calendar"] })
   }
 }
 

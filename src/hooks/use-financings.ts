@@ -15,6 +15,7 @@ function useInvalidateFinancings() {
     queryClient.invalidateQueries({ queryKey: [KEY] })
     queryClient.invalidateQueries({ queryKey: ["dashboard"] })
     queryClient.invalidateQueries({ queryKey: ["reports"] })
+    queryClient.invalidateQueries({ queryKey: ["calendar"] })
   }
 }
 

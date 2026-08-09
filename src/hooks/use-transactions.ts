@@ -23,6 +23,7 @@ function useInvalidateTransactions() {
     queryClient.invalidateQueries({ queryKey: ["recurring-rules"] })
     queryClient.invalidateQueries({ queryKey: ["budgets"] })
     queryClient.invalidateQueries({ queryKey: ["reports"] })
+    queryClient.invalidateQueries({ queryKey: ["calendar"] })
   }
 }
 

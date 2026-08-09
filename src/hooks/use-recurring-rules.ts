@@ -15,6 +15,7 @@ function useInvalidateRecurringRules() {
     queryClient.invalidateQueries({ queryKey: ["accounts"] })
     queryClient.invalidateQueries({ queryKey: ["dashboard"] })
     queryClient.invalidateQueries({ queryKey: ["reports"] })
+    queryClient.invalidateQueries({ queryKey: ["calendar"] })
   }
 }
 

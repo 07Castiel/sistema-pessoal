@@ -17,6 +17,7 @@ function useInvalidateCardInvoices() {
     queryClient.invalidateQueries({ queryKey: ["accounts"] }) // pagamento de fatura afeta saldo
     queryClient.invalidateQueries({ queryKey: ["dashboard"] })
     queryClient.invalidateQueries({ queryKey: ["reports"] })
+    queryClient.invalidateQueries({ queryKey: ["calendar"] })
   }
 }
 

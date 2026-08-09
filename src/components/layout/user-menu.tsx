@@ -35,7 +35,10 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring">
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <Avatar className="size-8">
             <AvatarImage src={profile?.avatar_url ?? undefined} />
             <AvatarFallback className="text-xs">
