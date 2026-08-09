@@ -406,16 +406,17 @@ em vez de deixar o usuário ver a mensagem crua do Postgres.**
 - Seguir sempre `repository → service → hook → component/page`; nenhuma
   tela chama `supabase` diretamente.
 - Antes de criar uma tabela/coluna nova, checar se já existe schema
-  pronto (ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md)) — os módulos
-  "BACKEND EXISTENTE" (empréstimos/financiamentos, orçamento) já têm
-  tabelas, triggers e enums completos desde a Fase 1; falta só a camada
-  de frontend. **Cartões/Faturas**, **Metas** e **Investimentos**
+  pronto (ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md)) — o módulo
+  "BACKEND EXISTENTE" restante (orçamento) já tem tabela e trigger
+  completos desde a Fase 1; falta só a camada de frontend. **Cartões/
+  Faturas**, **Metas**, **Investimentos** e **Empréstimos/Financiamentos**
   deixaram de ser `ComingSoon` na Fase 4 (`docs/MODULO_4.md`) — use
   `src/pages/cards/` (integração com transações, mais complexo),
-  `src/pages/goals/` ou `src/pages/investments/` (módulos isolados, mais
-  simples) como referência de como transformar um módulo "BACKEND
-  EXISTENTE" em UI completa. As 5 páginas ainda `ComingSoon` (`loans`,
-  `planning`, `calendar`, `reports`, `settings` — confirmado via grep por
+  `src/pages/goals/`/`src/pages/investments/` (módulos isolados, mais
+  simples) ou `src/pages/loans/` (dois modelos de dados na mesma página,
+  via abas) como referência de como transformar um módulo "BACKEND
+  EXISTENTE" em UI completa. As 4 páginas ainda `ComingSoon` (`planning`,
+  `calendar`, `reports`, `settings` — confirmado via grep por
   `ComingSoon` em `src/pages/`) são os próximos pontos de entrada
   esperados.
 - Reaproveitar componentes de `src/components/shared/` antes de criar um

@@ -333,23 +333,70 @@ Tabela `budgets` (planejado por categoria/mês/ano, 4 flags de alerta em
 orçamento → notificação + flag). View `v_cash_flow_daily` pronta, sem
 consumidor no frontend ainda. **Rota `/planejamento` é `ComingSoon`.**
 
-## 18. Empréstimos — **[Backend]**
+## 18. Empréstimos — **[UI]** (implementado na Fase 4)
 
-Tabela `loans` (`loan_type`: `recebido`/`concedido`,
-`loan_status`: `ativo`/`quitado`/`atrasado`/`cancelado`),
-`loan_installments`, trigger `recalc_loan_balance` — smoke-testado
-(parcela paga → status "quitado", saldo 0). **Rota `/emprestimos` é
-`ComingSoon`** (compartilhada com Financiamentos, mesma rota
-`/emprestimos`).
+CRUD de empréstimos simples (`/emprestimos`, aba "Empréstimos"): pessoa,
+tipo (`recebido` = peguei emprestado / `concedido` = emprestei), valor
+principal, número de parcelas, valor de cada parcela (sugerido como
+`principal/N`, editável — o acordo real entre as partes pode incluir
+juros informais não modelados separadamente), data de início, conta
+associada (opcional, só informativa), observações.
 
-## 19. Financiamentos — **[Backend]**
+As `N` parcelas são geradas automaticamente na criação, mensais a partir
+da data de início, todas com o mesmo valor (sem detalhamento de
+juros/amortização — o schema de `loan_installments` não tem essas
+colunas).
 
-Tabela `financings` (`amortization_type`: `sac`/`price`),
-`financing_installments`, trigger `recalc_financing_balance` —
-smoke-testado. **Sem rota própria** — a rota `/emprestimos` no
-`App.tsx` cobre "Empréstimos e Financiamentos" como um único item de
-menu (`src/constants/nav.ts`); se serão duas telas ou uma só é
-**[Requer confirmação]** com o usuário no momento de implementar.
+**Pagamento:** incremental — o valor informado soma ao `paid_amount` já
+registrado; a parcela só vira `pago` quando o total atinge `amount`
+(pagamento parcial suportado e testado). **`remaining_balance` e
+`status` nunca são calculados no frontend** — sempre lidos de
+`loans` após o recálculo do trigger.
+
+**Atraso:** `status='atrasado'` é sincronizado sob demanda ao listar
+(parcelas `pendente` com vencimento passado), não gravado pelo usuário
+nem derivado só na exibição — decisão de implementação documentada em
+`docs/MODULO_4.md` seção 23.
+
+**Exclusão:** sempre física — `loans` não tem `deleted_at`; remove
+também todas as parcelas (`ON DELETE CASCADE`).
+
+**Edição:** só metadados (pessoa, tipo, conta, observações) — valor,
+parcelas e datas não são editáveis após criado (exigiria regenerar todo
+o cronograma).
+
+## 19. Financiamentos — **[UI]** (implementado na Fase 4)
+
+CRUD de financiamentos (`/emprestimos`, aba "Financiamentos"): nome,
+sistema de amortização (SAC ou Price), valor financiado, taxa de juros
+(% ao mês — decisão de implementação, `interest_rate` não tem unidade
+explícita no schema), número de parcelas, data de início, conta
+associada (opcional), observações.
+
+O cronograma completo (`amount`, `amortization_amount`, `interest_amount`,
+`remaining_balance` por parcela) é calculado no frontend
+(`src/lib/financing-schedule.ts`) e gravado de uma vez na criação — não
+existe RPC nem trigger para isso no banco. Fórmulas validadas
+matematicamente (soma das amortizações = principal exato, saldo final =
+0 exato) antes de gravar qualquer dado real.
+
+**Pagamento, atraso e exclusão:** mesmas regras de Empréstimos (seção 18)
+— pagamento incremental/parcial, sincronização de atraso sob demanda,
+exclusão física em cascata.
+
+**Edição:** só metadados (nome, conta, observações) — amortização,
+valor, taxa e parcelas não são editáveis após criado.
+
+**Nota de UX (bug real corrigido, ver `MODULO_4.md` seção 27):** o
+"saldo devedor" de um financiamento inclui juros futuros e pode começar
+maior que o valor originalmente financiado — por isso a listagem não
+mostra mais "% pago" comparando os dois (métrica que dava resultado
+negativo); o progresso real (parcelas pagas) só é mostrado dentro do
+detalhe, onde as parcelas já estão carregadas.
+
+**[Requer confirmação]:** unidade de `interest_rate` (percentual vs.
+fração) não é verificável só pelo schema — assumido percentual por
+período, documentado como decisão, não fato confirmado.
 
 ## 20. Notificações — **[Backend, parcial]**
 
@@ -381,7 +428,7 @@ liste todos os eventos do sistema.
 
 | Status | Domínios |
 |---|---|
-| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4), Investimentos (Fase 4) |
+| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4), Investimentos (Fase 4), Empréstimos (Fase 4), Financiamentos (Fase 4) |
 | **[UI] parcial** | Anexos (só Contas + Transações), Notificações (só o sino, sem central) |
-| **[Backend] pronto, sem UI** | Transferências, Orçamentos, Empréstimos, Financiamentos |
-| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), se Empréstimos e Financiamentos serão uma tela ou duas, alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id` e `investment_movements.investment_id` (ambas revisadas, sem impacto comprovado — ver `MODULO_4.md` seções 11 e 18) |
+| **[Backend] pronto, sem UI** | Transferências, Orçamentos |
+| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), unidade de `financings.interest_rate` (percentual vs. fração), alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id`/`investment_movements.investment_id`/`loan_installments.loan_id`/`financing_installments.financing_id` (todas revisadas, sem impacto comprovado — ver `MODULO_4.md`) |

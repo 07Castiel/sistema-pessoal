@@ -497,10 +497,50 @@ Tabelas `goals`/`goal_contributions`. **UI implementada na Fase 4**
 
 Tabelas `loans`/`loan_installments` (enum `loan_type`: `recebido`,
 `concedido`) e `financings`/`financing_installments` (enum
-`amortization_type`: `sac`, `price`), triggers `recalc_loan_balance` e
-`recalc_financing_balance` já ativos e smoke-testados (parcela paga →
-status "quitado", saldo 0). **Sem UI** — rota `/emprestimos` é
-`ComingSoon`.
+`amortization_type`: `sac`, `price`). **UI implementada na Fase 4**
+(`docs/MODULO_4.md`, Parte 4) — rota `/emprestimos`, com abas separadas
+"Empréstimos"/"Financiamentos" porque o schema modela conceitos
+diferentes (confirmado, não presumido): `loans` não tem coluna de
+amortização e `loan_installments` não detalha juros/amortização por
+parcela (parcelas fixas simples); `financings` tem `amortization: sac \|
+price` e `financing_installments` guarda `amortization_amount`/
+`interest_amount`/`remaining_balance` por parcela (cronograma completo).
+
+- **`recalc_loan_balance`/`recalc_financing_balance`** (`AFTER INSERT/
+  UPDATE/DELETE` nas respectivas tabelas de parcela, `SECURITY INVOKER`):
+  recalculam `remaining_balance = sum(amount - paid_amount) where status
+  <> 'pago'` e `status` (`quitado` se todas as parcelas estão `pago`;
+  `atrasado` se qualquer parcela está `atrasado`; senão `ativo`).
+- **Pagamento parcial suportado pelo schema:** `paid_amount` é uma coluna
+  separada de `amount`; a fórmula de `remaining_balance` já contabiliza
+  `amount - paid_amount` mesmo com `status` ainda `pendente`. Confirmado
+  empiricamente (aporte parcial de 100 numa parcela de 250 recalculou
+  `remaining_balance` corretamente).
+- **`status = 'atrasado'` pode ser gravado diretamente** nas tabelas de
+  parcela — diferente de `transactions` (bloqueado por
+  `validate_transaction_status`), não há trigger de bloqueio aqui, e os
+  triggers de recálculo leem esse valor gravado. Não existe job nem
+  trigger que grave `atrasado` automaticamente — decisão de
+  implementação da Fase 4: `loansService.list`/`financingsService.list`
+  sincronizam (`UPDATE ... SET status='atrasado' WHERE status='pendente'
+  AND due_date < hoje`) antes de listar, mesmo espírito de
+  `generate_due_recurrences` chamada sob demanda.
+- **Geração do cronograma** (SAC, Price, parcelas fixas de empréstimo)
+  não tem RPC nem trigger no banco — implementada no frontend
+  (`src/lib/financing-schedule.ts`), validada matematicamente (soma das
+  amortizações = principal exato, saldo final = 0 exato) antes de gravar.
+- **`interest_rate numeric(7,4)`** em `financings` — sem unidade
+  explícita no schema; tratado como percentual por período (decisão de
+  implementação, não fato do schema, documentada em `MODULO_4.md`).
+- **Sem `deleted_at`** em `loans`/`financings` — exclusão é sempre física
+  (segura: `*_installments.loan_id`/`financing_id` são `ON DELETE
+  CASCADE`, nenhuma outra tabela referencia essas duas).
+- **Achado de segurança avaliado, sem migration:**
+  `loan_installments.loan_id`/`financing_installments.financing_id` não
+  têm trigger de ownership (mesma ausência de `goal_contributions.goal_id`/
+  `investment_movements.investment_id`). Testado e confirmado sem impacto
+  real — RLS de `loans`/`financings` bloqueia a atualização cruzada
+  dentro da própria trigger `SECURITY INVOKER`.
 
 ## 27. Orçamentos
 

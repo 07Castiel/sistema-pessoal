@@ -1064,3 +1064,33 @@ Resumo:
   pré-existentes de troca de sessão, não regressão). Dados de teste
   removidos, contagem zero confirmada.
 - TypeScript/ESLint/build: 0 erros.
+
+**Quarto módulo da Fase 4 (mesma sessão): Empréstimos e Financiamentos.**
+Backend (`loans`, `financings` + tabelas de parcelas) também já existia
+desde a Fase 1. Detalhamento completo em `docs/MODULO_4.md`, Parte 4
+(seções 22-29). Resumo:
+
+- **Empréstimos e Financiamentos são conceitos diferentes no schema**
+  (confirmado, não presumido) — financiamentos têm amortização SAC/Price
+  com juros/amortização detalhados por parcela; empréstimos são parcelas
+  fixas simples, sem sistema de amortização. Implementados como abas
+  distintas, não um formulário único.
+- **Fórmulas SAC/Price validadas matematicamente em Node** (5 cenários)
+  antes de usar no banco, depois revalidadas com dados reais — soma das
+  amortizações sempre fecha com o principal, saldo final sempre exatamente
+  zero.
+- **Decisão de sincronização:** diferente de transações, o schema de
+  parcelas permite gravar `status = 'atrasado'` diretamente (sem trigger
+  bloqueando) e os triggers de saldo leem esse valor — como não existe job
+  automático, `list()` sincroniza parcelas vencidas antes de listar
+  (mesmo espírito de `generate_due_recurrences`).
+- **Bug real encontrado testando no navegador e corrigido:** o card de
+  listagem mostrava "% pago" negativo para financiamentos (comparava
+  `remaining_balance`, que inclui juros futuros, contra `principal_amount`,
+  que não inclui) — corrigido removendo a métrica do card e adicionando
+  um indicador correto por contagem de parcelas pagas dentro do detalhe.
+- **Nenhuma migration** — mesma classe de achado de ownership de
+  Metas/Investimentos (`*_installments.loan_id`/`financing_id` sem
+  trigger de validação) testada e confirmada sem impacto real.
+- TypeScript/ESLint/build: 0 erros. Dados de teste removidos, contagem
+  zero confirmada.

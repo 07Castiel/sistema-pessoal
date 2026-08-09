@@ -1,4 +1,4 @@
-# Fase 4 — Cartões, Faturas, Metas e Investimentos
+# Fase 4 — Cartões, Faturas, Metas, Investimentos, Empréstimos e Financiamentos
 
 > **Parte 1 (seções 1-9): Cartões e Faturas.** Backend (`credit_cards`,
 > `card_invoices`, `v_card_usage`, trigger `recalc_invoice_total`) já
@@ -19,6 +19,17 @@
 > de movimentações (suportada pela trigger, diferente de Metas). **Nenhuma
 > migration** — mesma classe de achado de ownership de Metas foi
 > investigada e confirmada sem impacto real (seção 18).
+>
+> **Parte 4 (seções 22-29): Empréstimos e Financiamentos.** Backend
+> (`loans`, `loan_installments`, `financings`, `financing_installments`,
+> triggers `recalc_loan_balance`/`recalc_financing_balance`) já existia
+> desde a Fase 1. Investigação do schema revelou que são **conceitos
+> estruturalmente diferentes** (financiamentos têm amortização SAC/Price
+> com detalhamento de juros por parcela; empréstimos são parcelas fixas
+> simples) — implementados como abas distintas na mesma página, não um
+> formulário único. **Nenhuma migration.** Um bug real de UX (percentual
+> "pago" negativo) foi encontrado testando no navegador e corrigido antes
+> do commit (seção 27).
 
 ---
 
@@ -580,3 +591,174 @@ docs/ARQUITETURA.md                     contagem de ComingSoon (5 restantes)
   de Metas.
 - `investments.account_id` é só informativo — não integrado a nenhum
   fluxo funcional (sem efeito em saldo, sem filtro cruzado).
+
+---
+
+# Parte 4 — Empréstimos e Financiamentos
+
+Quarto módulo da Fase 4. Backend (`loans`, `loan_installments`,
+`financings`, `financing_installments`, triggers `recalc_loan_balance`/
+`recalc_financing_balance`) já existia desde a Fase 1, sem UI.
+
+## 22. Empréstimos ≠ Financiamentos — confirmado pelo schema, não presumido
+
+Investigação antes de codificar (`information_schema.columns` +
+`pg_get_functiondef`) mostrou dois modelos de dados genuinamente
+diferentes:
+
+| | `loans` | `financings` |
+|---|---|---|
+| Amortização | Não tem (`amortization_type` não existe na tabela) | `amortization: sac \| price` |
+| Parcela | `amount` fixo, sem detalhamento | `amount`, `amortization_amount`, `interest_amount`, `remaining_balance` por parcela |
+| Direção | `type: recebido \| concedido` (posso dever ou me deverem) | Só existe um sentido — sempre algo que o usuário deve |
+| Uso típico | Empréstimo informal entre pessoas | Financiamento de bem (carro, casa) |
+
+**Decisão:** implementados como duas abas ("Empréstimos"/"Financiamentos")
+na mesma página `/emprestimos`, não um formulário único — a UI reflete a
+diferença real do schema, como pedido.
+
+## 23. `_installments.status = 'atrasado'` pode ser gravado diretamente — decisão de sincronização
+
+Diferente de `transactions` (onde `validate_transaction_status` bloqueia
+gravar `atrasado` — é sempre derivado), **não existe trigger bloqueando**
+`loan_installments.status`/`financing_installments.status` de receber
+`'atrasado'` diretamente. E `recalc_loan_balance`/`recalc_financing_balance`
+**leem esse valor gravado** para decidir o status do empréstimo/financiamento
+(`atrasado` se qualquer parcela estiver `atrasado`). Ou seja, o schema
+espera que algo grave `atrasado` na parcela — mas não existe job nem
+trigger que faça isso.
+
+**Decisão de implementação** (não uma regra pré-existente, documentada
+como tal): `loansService.list`/`financingsService.list` chamam
+`syncOverdue(userId)` antes de listar — um `UPDATE` que marca parcelas
+`pendente` com `due_date` vencido como `atrasado`. Mesmo espírito de
+`generate_due_recurrences` ser chamada sob demanda ao abrir a tela, já
+estabelecido no projeto desde a Fase 3 (`MODULO_3.md`). Testado e
+confirmado: a parcela marcada `atrasado` propaga corretamente para o
+status do empréstimo/financiamento via trigger existente, sem alterá-la.
+
+## 24. `interest_rate` — decisão de unidade, não determinável só pelo schema
+
+`financings.interest_rate` é `numeric(7,4)`, sem unidade explícita no
+schema. **Decisão:** tratado como percentual por período (ex.: `1.5` =
+1,5% ao mês), rotulado assim no formulário ("Taxa (% a.m.)"). Convenção
+usual em apps financeiros brasileiros, mas **não verificável só pelo
+schema** — marcado como decisão de implementação, não fato confirmado.
+Periodicidade das parcelas assumida **mensal** (nem `loans` nem
+`financings` têm coluna de frequência, diferente de `recurring_rules`).
+
+## 25. Fórmulas de amortização — validadas matematicamente antes de usar no banco
+
+`src/lib/financing-schedule.ts` (função pura, sem I/O) implementa:
+
+- **SAC:** amortização constante (`principal / N`), juros sobre o saldo
+  devedor decrescente. Última parcela absorve o resíduo de arredondamento.
+- **Price:** parcela fixa (`PMT = P × [i(1+i)^n] / [(1+i)^n − 1]`,
+  caindo para `P/n` quando `i=0`), amortização crescente/juros
+  decrescentes. Última parcela absorve o resíduo.
+- **Empréstimos simples:** sem fórmula — `installment_amount` é
+  informado pelo usuário (o acordo real entre as partes), sugerido como
+  `principal/N` mas editável.
+
+**Validado com Node antes de usar no banco** (5 cenários: SAC e Price com
+juros, Price com 0% de juros, valores pequenos e grandes/24 parcelas) —
+em todos: soma das amortizações = principal exato, saldo da última
+parcela = 0 exato. Revalidado depois no banco real com dois casos
+completos (empréstimo simples e financiamento SAC) — ver seção 26.
+
+## 26. Testes financeiros (banco de produção, usuário descartável, role `authenticated`)
+
+**Empréstimo simples** (principal 1000, 4x de 250):
+
+| Cenário | Esperado | Obtido | Resultado |
+|---|---|---|---|
+| Criar + 4 parcelas | `remaining_balance = 1000`, `status = ativo` | `1000.00` / `ativo` | ✅ |
+| Pagar parcela 1 em cheio (250) | `remaining_balance = 750` | `750.00` | ✅ |
+| Pagar parcela 2 parcialmente (100 de 250) | `remaining_balance = 650` (750−100) | `650.00` | ✅ (confirma pagamento parcial, suportado pelo schema via `paid_amount` separado de `amount`) |
+| Marcar parcela 3 vencida como `atrasado` (sync) | `loans.status = atrasado` | `atrasado` | ✅ |
+| Quitar as 3 parcelas restantes | `remaining_balance = 0`, `status = quitado` | `0.00` / `quitado` | ✅ |
+
+**Financiamento SAC** (principal 6000, 2% a.m., 3x):
+
+| Cenário | Esperado | Obtido | Resultado |
+|---|---|---|---|
+| Criar + 3 parcelas (2120,00 / 2080,00 / 2040,00) | `remaining_balance = 6240` | `6240.00` | ✅ |
+| Pagar parcela 1 (2120) | `remaining_balance = 4120` | `4120.00` | ✅ |
+| Quitar as 2 restantes | `remaining_balance = 0`, `status = quitado` | `0.00` / `quitado` | ✅ |
+
+Valores batem exatamente com os calculados manualmente em Node (seção 25)
+antes de qualquer inserção no banco.
+
+## 27. Bug real encontrado testando no navegador e corrigido
+
+| # | Onde | Bug | Correção |
+|---|---|---|---|
+| 1 | `DebtCard` | "% pago" calculado como `(principal − remaining_balance) / principal`. Para financiamentos, `remaining_balance` inclui juros futuros e começa **maior** que `principal` — um financiamento recém-criado (6000 de principal, 6241,58 de saldo devedor com juros) mostrou **"-4% pago"**, matematicamente sem sentido. Reproduzido ao vivo criando um financiamento real na UI. | Removida a métrica "% pago" do card da listagem (`principal` e `remaining_balance` não são diretamente comparáveis quando há juros). Adicionado em vez disso um indicador correto **dentro dos sheets de detalhe** (`loan-detail-sheet.tsx`/`financing-detail-sheet.tsx`), baseado em **contagem de parcelas pagas** (`paidCount / installments_total`) — sempre entre 0-100%, nunca negativo, porque não depende de comparar valores com/sem juros. |
+
+## 28. Segurança / RLS multiusuário
+
+- SELECT/UPDATE/DELETE cruzado bloqueado em `loans` e `financings` — 0
+  linhas visíveis/afetadas para o usuário B; dados de A confirmados
+  intactos (nome, saldo, status) depois de cada tentativa.
+- **Achado avaliado, sem migration** (mesma classe de Metas/Investimentos):
+  `loan_installments.loan_id`/`financing_installments.financing_id` não
+  têm trigger de ownership. Testado: B insere uma parcela apontando para
+  o empréstimo/financiamento de A — aceito (RLS de INSERT só valida
+  `user_id`), mas `recalc_loan_balance`/`recalc_financing_balance` são
+  `SECURITY INVOKER`, então a `UPDATE` que fazem em `loans`/`financings`
+  roda com o privilégio de B e é bloqueada pela RLS dessas tabelas.
+  **Confirmado empiricamente:** `remaining_balance`/`status` de A
+  permaneceram inalterados antes/depois do ataque, em ambas as tabelas.
+
+## 29. Arquivos criados/alterados
+
+**Novos:**
+```
+src/lib/financing-schedule.ts                          SAC/Price/empréstimo simples (função pura)
+src/schemas/loan.schema.ts
+src/schemas/financing.schema.ts
+src/schemas/installment-payment.schema.ts               compartilhado (pagamento incremental/parcial)
+src/repositories/loans.repository.ts
+src/repositories/financings.repository.ts
+src/services/loans.service.ts                           list() sincroniza atrasadas antes de listar
+src/services/financings.service.ts                      idem
+src/hooks/use-loans.ts
+src/hooks/use-financings.ts
+src/components/loans/loan-form-dialog.tsx
+src/components/loans/financing-form-dialog.tsx          preview do cronograma antes de criar
+src/components/loans/debt-card.tsx                       compartilhado (sem "% pago" — ver seção 27)
+src/components/loans/installment-row.tsx                 compartilhado
+src/components/loans/installment-payment-dialog.tsx      compartilhado
+src/components/loans/loan-detail-sheet.tsx
+src/components/loans/financing-detail-sheet.tsx
+```
+
+**Modificados:**
+```
+src/pages/loans/loans.tsx     ComingSoon → página completa (abas Empréstimos/Financiamentos)
+docs/MODULO_4.md              esta seção (Parte 4)
+docs/CONTEXTO_PROJETO.md      seção 33 estendida
+docs/BANCO_DE_DADOS.md        seções 26-27 (Empréstimos, Financiamentos)
+docs/REGRAS_DE_NEGOCIO.md     seções 18-19 (Empréstimos, Financiamentos)
+docs/ARQUITETURA.md           contagem de ComingSoon (4 restantes)
+```
+
+## Validação técnica
+
+TypeScript 0 erros, ESLint 0 erros (4 warnings pré-existentes), build
+sucesso (~28s, bundle 1,56 MB / 429 KB gzip). Todos os usuários e dados
+de teste removidos, contagem zero confirmada em `loans`,
+`loan_installments`, `financings`, `financing_installments`.
+
+## Pendências não bloqueantes (Empréstimos/Financiamentos)
+
+- Editar valor/parcelas/taxa depois de criado não é suportado — exigiria
+  regenerar todo o cronograma; só metadados (nome/pessoa/conta/notas) são
+  editáveis.
+- Criação do empréstimo/financiamento + parcelas são duas operações
+  sequenciais não atômicas (mesma limitação já registrada para cartões,
+  `payInvoice`) — se a segunda falhar, fica sem parcelas.
+- Lacuna de ownership em `loan_installments`/`financing_installments`
+  avaliada e não corrigida (seção 28) — decisão registrada.
+- Sem anexos (comprovantes de pagamento) — não solicitado.
+- Sem restaurar exclusão — schema não tem soft delete nessas tabelas.
