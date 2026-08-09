@@ -12,12 +12,13 @@
 
 ## 1. Visão geral do sistema
 
-**Meu Financeiro** é um aplicativo de gestão financeira pessoal. Hoje
-(Fase 3 concluída) cobre contas, categorias, transações (receitas e
-despesas), recorrências, tags, centros de custo e um dashboard com dados
-reais. O domínio de dados já modela cartões/faturas, investimentos,
-empréstimos/financiamentos, metas e orçamento — mas **sem UI** ainda
-(telas `ComingSoon`).
+**Meu Financeiro** é um aplicativo de gestão financeira pessoal. A Fase 4
+está **100% concluída**: além do núcleo da Fase 3 (contas, categorias,
+transações, recorrências, tags, centros de custo, dashboard), o sistema
+cobre também cartões/faturas, metas, investimentos, empréstimos/
+financiamentos, orçamento, relatórios, configurações e um calendário
+financeiro — todos com UI completa e testada. **Não existe mais nenhuma
+tela `ComingSoon`.**
 
 É uma aplicação **client-only**: não existe backend próprio (Node/API).
 O frontend React fala diretamente com o Supabase (Postgres + Auth +
@@ -64,7 +65,7 @@ src/
     auth/          ProtectedRoute, GuestRoute
     accounts/ categories/ transactions/ recurring/ tags/ cost-centers/
                    componentes exclusivos de cada módulo
-  pages/           uma pasta por rota — inclui 8 placeholders ComingSoon (seção 20)
+  pages/           uma pasta por rota — todos os módulos com UI completa (nenhum ComingSoon, seção 20)
   layouts/         AppLayout (autenticado), AuthLayout
   hooks/           um hook por necessidade de dados/UI (TanStack Query)
   services/        camada fina entre hooks e repositories
@@ -406,19 +407,17 @@ em vez de deixar o usuário ver a mensagem crua do Postgres.**
 - Seguir sempre `repository → service → hook → component/page`; nenhuma
   tela chama `supabase` diretamente.
 - Antes de criar uma tabela/coluna nova, checar se já existe schema
-  pronto (ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md)) — o módulo
-  "BACKEND EXISTENTE" restante (orçamento) já tem tabela e trigger
-  completos desde a Fase 1; falta só a camada de frontend. **Cartões/
-  Faturas**, **Metas**, **Investimentos** e **Empréstimos/Financiamentos**
-  deixaram de ser `ComingSoon` na Fase 4 (`docs/MODULO_4.md`) — use
-  `src/pages/cards/` (integração com transações, mais complexo),
-  `src/pages/goals/`/`src/pages/investments/` (módulos isolados, mais
-  simples) ou `src/pages/loans/` (dois modelos de dados na mesma página,
-  via abas) como referência de como transformar um módulo "BACKEND
-  EXISTENTE" em UI completa. As 4 páginas ainda `ComingSoon` (`planning`,
-  `calendar`, `reports`, `settings` — confirmado via grep por
-  `ComingSoon` em `src/pages/`) são os próximos pontos de entrada
-  esperados.
+  pronto (ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md)) — todos os
+  módulos "BACKEND EXISTENTE" da Fase 4 (Cartões/Faturas, Metas,
+  Investimentos, Empréstimos/Financiamentos, Orçamento, Relatórios,
+  Configurações e Calendário, ver `docs/MODULO_4.md`) já ganharam UI
+  completa e não são mais `ComingSoon`. Use `src/pages/cards/`
+  (integração com transações, mais complexo), `src/pages/goals/`/
+  `src/pages/investments/` (módulos isolados, mais simples),
+  `src/pages/loans/` (dois modelos de dados na mesma página, via abas)
+  ou `src/pages/calendar/` (agregação de múltiplas fontes sem tabela
+  própria) como referência de como transformar um módulo "BACKEND
+  EXISTENTE" em UI completa para qualquer fase futura.
 - Reaproveitar componentes de `src/components/shared/` antes de criar um
   novo (seção 16 do `CONTEXTO_PROJETO.md` lista todos).
 - Nunca duplicar lógica de saldo — ela já existe no banco (trigger

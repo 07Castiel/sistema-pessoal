@@ -5,27 +5,33 @@
 > no banco de produção (`execute_sql`) e no repositório local no momento da
 > escrita — não são recordados de memória.
 >
-> **Última atualização:** 2026-08-09, sessão que implementou o sexto
-> módulo da Fase 4 (Relatórios), na sequência da mesma sessão que
-> implementou Orçamento. Ver seção 35 e `docs/MODULO_4.md` Parte 6.
-> Seções 33-34 documentam os módulos anteriores da Fase 4 (Cartões,
-> Metas, Investimentos, Empréstimos/Financiamentos, Orçamentos).
+> **Última atualização:** 2026-08-09/10, sessão que implementou os dois
+> últimos módulos da Fase 4 (Configurações e Calendário) e executou uma
+> auditoria geral do sistema inteiro. **A Fase 4 está 100% concluída.**
+> Ver seção 36 e `docs/MODULO_4.md` Partes 7-8 + auditoria. Seções 33-35
+> documentam os módulos anteriores da Fase 4 (Cartões, Metas,
+> Investimentos, Empréstimos/Financiamentos, Orçamentos, Relatórios).
 
 ---
 
 ## 1. Estado atual em uma frase
 
 **FASE 3 CONCLUÍDA e commitada** (`58936f2`, `216e2b4`, `e629d8e`, enviados
-para `origin/develop`). **FASE 4 em andamento, 6 de 8 módulos concluídos:**
+para `origin/develop`). **FASE 4 CONCLUÍDA — 8 de 8 módulos:**
 Cartões/Faturas, Metas, Investimentos, Empréstimos/Financiamentos,
-Orçamentos e Relatórios implementados e testados (ver seções 33-35).
-Contas (Fase 1), Categorias (Fase 2), Receitas/Despesas (Fase 3,
-incluindo recorrências, anexos, tags, centros de custo e dashboard com
-dados reais) e os 6 módulos citados da Fase 4 estão implementados,
-testados (funcional, financeiro, segurança multiusuário, dark mode,
-responsividade) e com 0 erros de TypeScript/ESLint e build funcionando.
-**Restam Calendário e Configurações** (Fase 4, ver
-`docs/HANDOFF_CONTINUIDADE.md`).
+Orçamentos, Relatórios, Configurações e Calendário implementados e
+testados (ver seções 33-36). Contas (Fase 1), Categorias (Fase 2),
+Receitas/Despesas (Fase 3, incluindo recorrências, anexos, tags, centros
+de custo e dashboard com dados reais) e todos os 8 módulos da Fase 4
+estão implementados, testados (funcional, financeiro, segurança
+multiusuário, dark mode, responsividade) e com 0 erros de TypeScript/
+ESLint e build funcionando. **Nenhuma página `ComingSoon` restante** —
+uma auditoria geral do sistema foi executada após a conclusão de todos
+os módulos (seção 36), com 2 bugs reais adicionais encontrados e
+corrigidos e um achado de performance real documentado para uma sessão
+futura dedicada. Próxima fase (5?) não definida — ver
+`docs/HANDOFF_CONTINUIDADE.md` para o estado real e possíveis próximos
+passos.
 
 ---
 
@@ -1198,3 +1204,84 @@ Resumo:
   apareceu e foi corrigido durante a implementação). Mobile 375px sem
   overflow, dark mode com tokens já validados. Dados de teste removidos,
   contagem zero confirmada.
+
+## 36. Fase 4 CONCLUÍDA — Configurações, Calendário e auditoria geral (2026-08-09/10)
+
+**Sétimo e oitavo módulos da Fase 4, numa sessão de finalização
+completa: Configurações e Calendário.** Com esses dois, **a Fase 4 está
+100% concluída** — nenhuma página `ComingSoon` restante em
+`src/pages/`. Detalhamento completo em `docs/MODULO_4.md`, Partes 7-8
+(seções 44-52) e auditoria geral (seções 53-56).
+
+**Configurações (`/configuracoes`):**
+
+- Investigação prévia (`grep -r` no código, não presumida) confirmou:
+  `profiles.theme` nunca teve consumidor — `next-themes` já era a fonte
+  de verdade real do tema, completamente desconectada da coluna;
+  `monthly_goal`/`annual_goal` também nunca tiveram consumidor;
+  `currency`/`language` idem, e o app não tem infraestrutura real de
+  multi-moeda/i18n para dar efeito a essas duas colunas.
+- **Decisão:** tema reaproveita o `next-themes` já testado (mesmo hook
+  do `ThemeToggle` do cabeçalho, não um sistema paralelo); metas
+  financeiras ganharam UI real de edição + indicador de progresso
+  (reaproveitando o mesmo dado já buscado por Relatórios); moeda/idioma
+  ficaram só informativos — expor um seletor que não muda nada seria
+  pior que documentar a limitação.
+- Senha alterada via `supabase.auth.updateUser`, reaproveitando
+  `auditService.logPasswordChanged` (já existia desde a Fase 3, sem
+  consumidor fora do fluxo de recuperação até então).
+- Testado: perfil atualiza o cabeçalho sem reload (`refreshProfile()`
+  do `AuthProvider`, `profile` não vive no TanStack Query), senha nova
+  testada com login real, RLS de `profiles` confirmada (B não vê nem
+  altera o perfil de A).
+
+**Calendário (`/calendario`):**
+
+- Nenhuma tabela de eventos nova — agrega 6 fontes já existentes
+  (transações com vencimento, faturas, parcelas de empréstimo/
+  financiamento, prazo de metas, próxima ocorrência de recorrência),
+  uma query por fonte por mês exibido, sem N+1.
+- **Decisão deliberada:** só a próxima ocorrência de recorrência já
+  calculada é mostrada — não projeta múltiplas ocorrências futuras, para
+  não simular a lógica de `_next_recurrence_date` no frontend.
+- **Bug real encontrado e corrigido:** `-0` em JavaScript produzindo
+  `"+-R$ 0,00"` para eventos de valor zero (fatura recém-criada sem
+  compra ainda) — corrigido normalizando com `\|\| 0` em 4 pontos de
+  negação de valor.
+- Testado com um evento de cada um dos 6 tipos simultaneamente no mesmo
+  mês, via UI real: badges de atraso/concluído corretos, navegação por
+  clique em evento leva ao módulo certo, RLS multiusuário confirmada nas
+  6 fontes (SQL e UI).
+
+**Auditoria geral do sistema (após os 8 módulos):**
+
+- Varredura completa por `ComingSoon`/`TODO`/`FIXME`/`console.log`/
+  `any`/dados mockados em todo `src/` — nenhuma ocorrência real (estado
+  já limpo, confirmado, não presumido).
+- Confirmado: nenhum repository importa outro repository, nenhum
+  componente/página chama `supabase` diretamente (exceção única já
+  documentada: `reset-password.tsx`).
+- **2 bugs reais adicionais encontrados e corrigidos, fora do escopo de
+  qualquer módulo individual:** `<button>` do avatar no cabeçalho sem
+  `type="button"` (mesma classe de bug já documentada desde a Fase 3);
+  7 hooks de mutação (transações, faturas, empréstimos, financiamentos,
+  metas, aportes/retiradas de meta, recorrências) nunca invalidavam
+  `["calendar"]`, apesar de suas mutações afetarem dado mostrado no
+  Calendário — corrigido em todos, mesmo padrão já usado para
+  `["dashboard"]`/`["reports"]`.
+- **Achado de performance real, documentado e não corrigido:**
+  `get_advisors` encontrou 66 ocorrências de "Auth RLS Initialization
+  Plan" (policies chamando `auth.uid()` sem `(select ...)`) em tabelas
+  fora de `transactions` — pré-existente desde a Fase 1, não introduzido
+  por nenhum módulo desta sessão; mudança ampla demais (dezenas de
+  policies) para ser feita apressadamente, registrada para uma sessão
+  de hardening futura dedicada.
+- **Auditoria financeira cruzada:** cenário controlado único testado
+  simultaneamente em Dashboard, Relatórios, Orçamento e Calendário — os
+  4 concordaram exatamente entre si (mesma base de dados, nenhum
+  recalcula sua própria versão de receita/despesa/realizado).
+- TypeScript/ESLint/build: 0 erros em todas as validações desta sessão.
+  `get_advisors` (security): idêntico ao início, só o warning
+  pré-existente `auth_leaked_password_protection`. Nenhum segredo
+  versionado. Todos os dados de teste (de todos os módulos desta fase)
+  removidos, contagem zero confirmada.

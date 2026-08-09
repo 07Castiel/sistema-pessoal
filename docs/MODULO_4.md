@@ -1,4 +1,4 @@
-# Fase 4 — Cartões, Faturas, Metas, Investimentos, Empréstimos, Financiamentos, Orçamentos e Relatórios
+# Fase 4 — Cartões, Faturas, Metas, Investimentos, Empréstimos, Financiamentos, Orçamentos, Relatórios, Configurações e Calendário
 
 > **Parte 1 (seções 1-9): Cartões e Faturas.** Backend (`credit_cards`,
 > `card_invoices`, `v_card_usage`, trigger `recalc_invoice_total`) já
@@ -51,6 +51,34 @@
 > líquido" do Dashboard mostrar `R$ 0,00` silenciosamente desde sempre.
 > Corrigida com uma troca mínima e aditiva na view, sem tocar nenhuma
 > trigger financeira (seção 38).
+>
+> **Parte 7 (seções 44-47): Configurações.** Último "backend existente,
+> sem UI" da tabela `profiles`. Perfil (nome/avatar), tema reaproveitando
+> o `next-themes` já funcionando (sem sistema concorrente), metas
+> financeiras (`monthly_goal`/`annual_goal`, colunas sem consumidor até
+> então) com indicador de progresso reaproveitando dado já buscado por
+> Relatórios, e alteração de senha via `supabase.auth.updateUser`
+> (reaproveitando `auditService.logPasswordChanged`, já existente e não
+> usado por nenhuma tela até então). Moeda/idioma **não** viraram
+> controles editáveis — o app não tem suporte real a multi-moeda/i18n,
+> e simular uma opção sem efeito seria pior do que documentar a
+> limitação. **Nenhuma migration.**
+>
+> **Parte 8 (seções 48-52): Calendário.** Módulo final da Fase 4 —
+> nenhuma tabela de eventos nova, seguindo a análise da sessão anterior
+> de que criar uma duplicaria dado já existente. Agrega 6 fontes já
+> existentes (transações com vencimento, faturas, parcelas de
+> empréstimo/financiamento, prazo de metas, próxima ocorrência de
+> recorrência) numa única visualização mensal, uma query por fonte por
+> mês exibido. **Nenhuma migration.**
+>
+> **Após os 8 módulos concluídos:** uma auditoria geral do sistema
+> (seções 53-56) encontrou e corrigiu 2 bugs reais adicionais fora do
+> escopo de qualquer módulo individual — um `<button>` sem
+> `type="button"` no menu do usuário (mesma classe de bug já documentada
+> no projeto) e uma lacuna de invalidação de cache: 7 hooks de mutação
+> que afetam dado consumido pelo Calendário nunca invalidavam
+> `["calendar"]`.
 
 ---
 
@@ -1213,3 +1241,344 @@ docs/CONTEXTO_PROJETO.md             novo histórico
 - Sem exportação (CSV/PDF/Excel) — não implementada nesta sessão;
   avaliar necessidade real antes de adicionar uma biblioteca nova (regra
   do projeto de não adicionar dependência sem necessidade comprovada).
+
+---
+
+# Parte 7 — Configurações
+
+Sétimo módulo da Fase 4. `profiles` era a única tabela de "backend
+existente, sem UI" cujas colunas (`full_name`, `avatar_url`, `currency`,
+`language`, `theme`, `monthly_goal`, `annual_goal`) já eram lidas
+integralmente pelo `AuthProvider` (`loadProfile`) mas nunca escritas por
+nenhuma tela.
+
+## 44. Investigação prévia — o que cada coluna realmente é
+
+Antes de desenhar a UI, cada coluna foi verificada individualmente
+(`information_schema` + `grep -r` no código-fonte, não presumida pelo
+nome):
+
+- **`full_name`/`avatar_url`** — únicas colunas já consumidas em UI
+  (`UserMenu`, iniciais do avatar) antes desta sessão, mas nunca
+  editáveis. Consumidor óbvio, implementado sem ambiguidade.
+- **`theme`** — `grep -r "profiles\.theme" src/` não encontrou nenhuma
+  ocorrência antes desta sessão. `theme-provider.tsx` usa `next-themes`
+  com `attribute="class"`/`enableSystem`, persistido só via
+  `localStorage`, **sem nenhuma leitura/escrita de `profiles.theme`**.
+  São dois sistemas genuinamente desconectados — não "possivelmente",
+  confirmado lendo o código. **Decisão:** não criar um segundo mecanismo
+  de tema. A seção "Aparência" de Configurações chama `useTheme()` do
+  próprio `next-themes` (o mesmo hook usado por `ThemeToggle` no
+  cabeçalho) — é uma segunda entrada de UI para o **mesmo** mecanismo já
+  testado em todos os módulos anteriores, não um sistema paralelo.
+  `profiles.theme` continua sem consumidor — documentado como
+  `Requer confirmação` (seção 47), não decidido às cegas.
+- **`monthly_goal`/`annual_goal`** — `grep -r` também não encontrou
+  nenhuma ocorrência em `dashboard.repository.ts`/`use-dashboard.ts`
+  antes desta sessão. Colunas `numeric` opcionais, claramente pensadas
+  para uma meta de economia mensal/anual. **Decisão:** dar-lhes um
+  consumidor real — editáveis em Configurações, com um indicador de
+  progresso do mês atual logo abaixo do formulário, reaproveitando
+  `useMonthlySummariesQuery`/`currentMonthPoint` já criados para
+  Relatórios (mesmo cache, sem query nova).
+- **`currency`/`language`** — `text` livres, default `'BRL'`/`'pt-BR'`.
+  `formatCurrency(value, currency = "BRL")` em `src/lib/format.ts`
+  aceita um parâmetro de moeda, mas **nenhum call site do projeto
+  inteiro passa `profile.currency`** — todos usam o default. O app não
+  tem nenhuma infraestrutura de i18n (strings em português fixas em
+  todo o código). **Decisão:** não expor como controle editável — um
+  seletor que "salva" mas não muda nenhum comportamento real seria pior
+  UX do que a limitação documentada. Exibidos como texto informativo
+  ("Moeda: Real brasileiro (BRL) — fixo, sem suporte a múltiplas moedas
+  ainda"). Fazer `currency` ter efeito real exigiria varrer todo call
+  site de `formatCurrency` em todos os módulos já entregues — fora do
+  escopo desta sessão, registrado como pendência.
+- **Senha** — via `supabase.auth.updateUser({ password })`, nunca uma
+  tabela própria. `reset-password.tsx` (fluxo de recuperação) já usava
+  exatamente essa chamada; **`auditService.logPasswordChanged`** já
+  existia desde a Fase 3 mas não tinha nenhum consumidor fora do fluxo
+  de recuperação — reaproveitado aqui para o fluxo de "trocar senha
+  logado".
+- **E-mail** — exibido como somente leitura. Alterar e-mail via
+  `supabase.auth.updateUser({ email })` dispara um fluxo de confirmação
+  por e-mail que não há como validar de ponta a ponta neste ambiente de
+  desenvolvimento (sem acesso a caixa de entrada real) — decisão de
+  escopo, não omissão.
+- **Exclusão de conta** — não implementada, mesma decisão registrada no
+  handoff da sessão anterior (ação destrutiva e irreversível, fora do
+  escopo de uma primeira versão).
+
+## 45. Arquitetura
+
+`settings.repository.ts` (`updateProfile`, `updateFinancialGoals`) —
+dois `UPDATE` simples em `profiles`, mesmo padrão de qualquer outro
+repository. **Senha não passa pelo repository** — é uma chamada ao SDK
+de Auth, não uma mutação de dado de domínio; mesmo padrão já
+estabelecido no projeto (`AuthProvider` já concentra `signIn`/`signUp`/
+`signOut`/`resetPassword` como chamadas diretas ao `supabase.auth.*`,
+nunca via repository). Adicionado `updatePassword` ao `AuthProvider`
+(`auth-context.tsx`/`auth-context-value.ts`), espelhando exatamente
+`resetPassword`.
+
+**Invalidação:** `profile` não vive no cache do TanStack Query — é
+estado do próprio `AuthProvider`, carregado uma vez por sessão. Por
+isso `useUpdateProfile`/`useUpdateFinancialGoals` chamam
+`refreshProfile()` (já existente no contexto) em vez de
+`queryClient.invalidateQueries`. Testado ao vivo: salvar o perfil
+atualiza o avatar/nome no cabeçalho **imediatamente**, sem reload.
+
+## 46. Testes (banco de produção, usuários descartáveis)
+
+| Cenário | Esperado | Obtido | Resultado |
+|---|---|---|---|
+| Atualizar `full_name`/`avatar_url` | Persistido, refletido no cabeçalho sem reload | ✅ | ✅ |
+| Atualizar `monthly_goal`/`annual_goal` | Persistido, indicador de progresso aparece | `R$ 0,00 de R$ 500,00 (0%)` para mês sem receita liquidada | ✅ |
+| Alterar senha | `supabase.auth.updateUser` sucesso, login com a senha nova funciona, `audit_logs` recebe `password_changed` | Confirmado nos 3 pontos | ✅ |
+| Usuário B: `SELECT`/`UPDATE` do perfil de A | RLS bloqueia (`profiles_select_own`/`profiles_update_own`, `id = auth.uid()`) | 0 linhas em ambos os casos; `full_name` de A confirmado intacto após a tentativa de `UPDATE` | ✅ |
+
+TypeScript/ESLint/build: 0 erros (1 warning novo de
+`react-hooks/incompatible-library` apareceu ao usar `form.watch(...)` —
+corrigido trocando para `useWatch({ control, name })`, o padrão já
+usado em outros formulários do projeto, ex.:
+`category-form-dialog.tsx`). Mobile 375px sem overflow, dark mode com
+tokens já validados.
+
+## Arquivos criados/alterados (Configurações)
+
+**Novos:**
+```
+src/schemas/profile.schema.ts               profileSchema + financialGoalsSchema
+src/repositories/settings.repository.ts     updateProfile, updateFinancialGoals
+src/services/settings.service.ts            passthrough
+src/hooks/use-settings.ts                   useUpdateProfile, useUpdateFinancialGoals, useUpdatePassword
+```
+
+**Modificados:**
+```
+src/pages/settings/settings.tsx         ComingSoon → página completa
+src/contexts/auth-context.tsx           + updatePassword
+src/contexts/auth-context-value.ts      + updatePassword na interface
+```
+
+## Pendências não bloqueantes (Configurações)
+
+- `profiles.theme`/`currency`/`language` continuam sem sincronização
+  real com o comportamento do app (seção 44) — `Requer confirmação`
+  sobre se vale a pena implementar de verdade (sincronizar tema
+  cross-device, ou multi-moeda/i18n) numa sessão futura dedicada.
+- Sem alteração de e-mail, sem exclusão de conta — decisões de escopo
+  documentadas, não omissões.
+
+---
+
+# Parte 8 — Calendário
+
+Oitavo e último módulo da Fase 4. Investigação confirmou o que o
+handoff da sessão anterior já suspeitava: não existe tabela de eventos
+dedicada, e criar uma duplicaria dado já mantido corretamente em 6
+lugares diferentes.
+
+## 47. Fontes de dados confirmadas (não presumidas)
+
+`information_schema.columns` + `pg_policies` confirmaram, para cada
+fonte, a coluna de data e a policy de RLS antes de escrever qualquer
+query:
+
+| Fonte | Coluna de data | `user_id` próprio? |
+|---|---|---|
+| `transactions` (via `v_transactions_enriched`) | `due_date` | Sim (já validado em fases anteriores) |
+| `card_invoices` | `due_date` | Sim |
+| `loan_installments` | `due_date` | Sim |
+| `financing_installments` | `due_date` | Sim |
+| `goals` | `target_date` | Sim |
+| `recurring_rules` | `next_run_date` | Sim |
+
+Todas as 6 tabelas/view já tinham `user_id` próprio com policy
+`user_id = auth.uid()` (confirmado via `pg_policies`) — nenhuma
+precisou de investigação de ownership tipo "tabela filha", diferente de
+Metas/Investimentos/Empréstimos/Orçamento na Fase 4.
+
+## 48. Decisão central: sem tabela de eventos, sem projeção de recorrência
+
+- **Sem tabela nova:** os 6 métodos de `calendar.repository.ts` fazem
+  uma query cada, filtrada pelo intervalo do mês exibido — nenhuma
+  duplica o dado já mantido pela tabela/trigger de origem.
+- **Recorrências:** só `recurring_rules.next_run_date` (a única
+  ocorrência futura que o banco já calcula e armazena) é mostrada. Não
+  projeta múltiplas ocorrências futuras — isso exigiria simular
+  `_next_recurrence_date` no frontend, arriscando divergir da lógica
+  real do banco caso a function mude. Decisão já antecipada pelo
+  handoff da sessão anterior, confirmada como a escolha certa após
+  investigar `_next_recurrence_date` (é `SECURITY INVOKER`, chamada
+  internamente por `generate_due_recurrences`, sem um jeito limpo de
+  simular N chamadas futuras sem duplicar sua lógica de calendário
+  mensal/quinzenal/etc.).
+- **`atrasado` de parcelas de empréstimo/financiamento:** como
+  documentado desde a Fase 4/Parte 4, `loan_installments.status`/
+  `financing_installments.status` só recebem `'atrasado'` quando
+  `loansService.list`/`financingsService.list` chamam `syncOverdue`
+  antes de listar — o Calendário não passa por esses services (consulta
+  as tabelas diretamente, por período, não por empréstimo/financiamento
+  específico). Por isso `useCalendarEvents` **deriva** `isOverdue`
+  também a partir de `due_date < hoje` quando o status ainda está
+  `'pendente'`, no mesmo espírito de `effective_status`/`is_overdue` já
+  usado em `v_transactions_enriched` — não é uma lacuna, é o mesmo
+  padrão de "nunca gravar o que pode ser derivado" aplicado a uma leitura
+  que não passa pelo sync.
+- **Faturas:** reaproveita `effectiveInvoiceStatus` de
+  `src/lib/card-invoice.ts` (já existente desde Cartões/Faturas) em vez
+  de reimplementar a derivação de `atrasada`/`fechada`.
+
+## 49. Resolução de nomes sem embed de banco
+
+Mesmo padrão já estabelecido em Orçamento/Relatórios: nenhum
+repository deste projeto usa `select("*, relacao(...)")`. Nomes de
+cartão/empréstimo/financiamento são resolvidos no hook a partir de
+`useCreditCardsQuery()`/`useLoansQuery()`/`useFinancingsQuery()` —
+listas já em cache compartilhado com as telas de Cartões e Empréstimos,
+sem query de banco adicional.
+
+## 50. Bug real encontrado e corrigido durante os testes: `-0` na formatação
+
+Testando com uma fatura de cartão recém-criada (`total_amount = 0`,
+default da coluna, sem compra lançada), o card do dia exibiu
+**"+-R$ 0,00"**. Causa raiz: `amount: -Number(inv.total_amount)` produz
+`-0` em JavaScript quando `total_amount` é `0`; `-0 >= 0` é `true` (por
+isso o `+` foi adicionado), mas `Intl.NumberFormat` respeita o sinal de
+`-0` e formata como negativo — daí o `+` e o `-` juntos. Corrigido
+normalizando com `|| 0` em todo ponto de negação de valor
+(`use-calendar.ts`, 4 ocorrências: transação, fatura, parcela de
+empréstimo, parcela de financiamento) — `-0 || 0` avalia para `0` em
+JavaScript porque `-0` é falsy. Reproduzido e confirmado corrigido no
+navegador antes de prosseguir.
+
+## 51. Testes (banco de produção, usuário descartável, role `authenticated`)
+
+Cenário controlado com um evento de cada um dos 6 tipos no mesmo mês,
+testado via UI real (navegador, não só SQL):
+
+| Evento | Esperado | Obtido | Resultado |
+|---|---|---|---|
+| Transação com vencimento passado, `status='pendente'` | Badge "Atrasado", `-R$ 250,00` | ✅ | ✅ |
+| Fatura de cartão | Nome do cartão resolvido, valor correto | `Fatura Cartao Teste` | ✅ (após corrigir o bug da seção 50) |
+| Parcela de empréstimo (`type='recebido'`) | "A pagar", valor negativo | `Parcela 1 — Joao · A pagar, -R$ 250,00` | ✅ |
+| Parcela de financiamento | "A pagar", valor negativo | `Parcela 1 — Financiamento Carro · A pagar, -R$ 983,33` | ✅ |
+| Meta com prazo no mês | Sem valor, "Prazo da meta" | `Viagem · Prazo da meta` (sem valor) | ✅ |
+| Recorrência com próxima ocorrência no mês | "Próxima ocorrência", valor negativo (despesa) | `Assinatura Streaming · Próxima ocorrência, -R$ 39,90` | ✅ |
+| Clicar um evento | Navega para o módulo correspondente | Clique na recorrência abriu `/recorrencias` mostrando exatamente essa regra | ✅ |
+| Navegar para um mês sem eventos | Grade vazia, sem dots coloridos | Confirmado (Set/2026, `coloredDots: 0`) | ✅ |
+| Navegar de volta para o mês com eventos | Eventos reaparecem | ✅ | ✅ |
+
+**Segurança / RLS multiusuário:** usuário B (via `SELECT` direto nas 6
+fontes, sem `WHERE` de isolamento explícito no app) = 0 linhas em
+**todas** as 6 fontes para o `user_id` de A. Confirmado tanto via SQL
+quanto via UI real (logout do usuário A, registro de um usuário B novo
+no mesmo navegador, `/calendario` mostrando a grade completamente sem
+nenhum dot colorido).
+
+## 52. Auditoria financeira cruzada — Dashboard × Relatórios × Orçamento × Calendário
+
+Cenário final, um único usuário descartável, testado via UI real nas 4
+telas em sequência: receita de R$ 1.000 recebida, despesa de R$ 300
+paga (categoria Alimentação), despesa de R$ 100 pendente com
+vencimento dia 18 (mesma categoria), orçamento de R$ 500 para
+Alimentação no mês.
+
+| Tela | Métrica | Esperado | Obtido |
+|---|---|---|---|
+| Dashboard | Receitas / Despesas / Resultado / Patrimônio | 1.000 / 300 / 700 / 700 | ✅ idêntico |
+| Relatórios | Receitas / Despesas / Resultado / Patrimônio | 1.000 / 300 / 700 / 700 | ✅ idêntico ao Dashboard |
+| Orçamento | Realizado (Alimentação) | 300 (60% de 500) | ✅ idêntico à despesa paga |
+| Calendário (dia 18) | Evento de transação pendente | R$ 100,00, categoria Alimentação | ✅ idêntico à "Contas a pagar" do Dashboard |
+
+Todos os 4 módulos concordam entre si porque todos leem, direta ou
+indiretamente, da mesma base (`transactions` via `v_monthly_summary`/
+`v_category_summary`/`v_transactions_enriched`) — nenhum recalcula a
+própria versão de "receita"/"despesa"/"realizado". Confirma
+empiricamente o requisito do usuário de "fonte de verdade única" para
+esta sessão inteira, não só para Relatórios.
+
+## Arquivos criados/alterados (Calendário)
+
+**Novos:**
+```
+src/repositories/calendar.repository.ts    6 métodos, um por fonte
+src/services/calendar.service.ts           passthrough
+src/hooks/use-calendar.ts                  useCalendarEvents — combina as 6 fontes em CalendarEvent[]
+```
+
+**Modificados:**
+```
+src/pages/calendar/calendar.tsx    ComingSoon → página completa
+```
+
+## Pendências não bloqueantes (Calendário)
+
+- Só a próxima ocorrência de recorrência é mostrada, não uma projeção
+  de várias ocorrências futuras (seção 48) — decisão deliberada, não
+  omissão.
+- Sem filtro por tipo de evento na própria página (a legenda é só
+  informativa) — não solicitado, não implementado.
+
+---
+
+# Auditoria geral do sistema (após os 8 módulos da Fase 4)
+
+Executada depois de Configurações e Calendário concluídos, cobrindo o
+sistema inteiro — não só os módulos desta sessão.
+
+## 53. Escopo e método
+
+Varredura por `ComingSoon`/`TODO`/`FIXME`/`console.log`/`any`/
+`as unknown as`/`@ts-ignore`/dados mockados em todo `src/` (nenhuma
+ocorrência real encontrada, confirmando o estado limpo já relatado nas
+sessões anteriores); verificação de que nenhum repository importa outro
+repository e nenhum componente/página chama `supabase` diretamente
+(exceção única e já documentada: `reset-password.tsx`, fluxo de
+recuperação de senha fora do `AuthProvider`); `get_advisors` (security e
+performance) no banco; revisão de toda função `useInvalidate*` do
+projeto para checar cobertura cruzada entre módulos.
+
+## 54. Bugs reais encontrados e corrigidos
+
+| # | Onde | Bug | Correção |
+|---|---|---|---|
+| 1 | `use-calendar.ts` | `-0` produzindo `"+-R$ 0,00"` em valores zerados (seção 50) | Normalização `\|\| 0` em 4 pontos de negação |
+| 2 | `user-menu.tsx` | `<button>` do avatar sem `type="button"` | Adicionado explicitamente, mesma classe de bug já documentada no projeto (`AttachmentsPanel`, Fase 3) |
+| 3 | 7 hooks de mutação (`use-transactions`, `use-card-invoices`, `use-loans`, `use-financings`, `use-goals`, `use-goal-contributions`, `use-recurring-rules`) | Nenhum invalidava `["calendar"]`, apesar de suas mutações afetarem dado mostrado no Calendário | Adicionada a invalidação em cada um, mesmo padrão já usado para `["dashboard"]`/`["reports"]` |
+
+## 55. Achados documentados, não corrigidos (fora do escopo desta sessão)
+
+- **`get_advisors` (performance): 66 ocorrências de "Auth RLS
+  Initialization Plan"** — policies RLS em várias tabelas chamam
+  `auth.uid()` diretamente em vez de `(select auth.uid())`, fazendo a
+  function ser reavaliada por linha em vez de uma vez por query. Migration
+  `0027` já aplicou essa otimização em `transactions`, mas não foi
+  replicada nas demais tabelas do schema (achado pré-existente, desde a
+  Fase 1 — nenhuma tabela nova criada nesta sessão, então nenhuma delas
+  contribui para essa contagem). **Não corrigido nesta sessão**: são
+  dezenas de policies em todo o schema, uma mudança ampla o suficiente
+  para merecer sua própria sessão dedicada (investigar cada policy,
+  testar cada uma antes/depois) em vez de um ajuste apressado dentro de
+  uma sessão já focada em finalizar módulos. Registrado como pendência
+  real de performance para o futuro.
+- **16 "Unindexed foreign keys" / 18 "Unused Index"** — ambos
+  pré-existentes, de baixo impacto no volume atual (app pessoal,
+  dezenas/centenas de linhas por tabela, não milhões). Não corrigido
+  para evitar otimização prematura sem medição real de necessidade
+  (regra do projeto).
+- **`v_monthly_summary`/`v_category_summary` não excluem transações na
+  lixeira** — achado já registrado na Parte 6 (seção 39), reafirmado
+  aqui: continua sem correção, mesma razão (afetaria Dashboard e
+  Orçamento, que já estão em produção).
+
+## 56. Validação final
+
+TypeScript (`tsc -b --noEmit`): 0 erros. ESLint: 0 erros, 4 warnings
+pré-existentes (mesmos de sempre). Build de produção: sucesso (~36s,
+bundle 1,63 MB / 445 KB gzip). `get_advisors` (security): idêntico ao
+início da sessão, só o warning pré-existente
+`auth_leaked_password_protection`. Nenhum segredo versionado
+(`git ls-files` confirma só `.env.example`). Todos os usuários e dados
+de teste (SQL e navegador, de todas as sessões desta fase) removidos,
+contagem zero confirmada nas tabelas de domínio.

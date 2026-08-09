@@ -7,18 +7,23 @@
 > `pg_get_functiondef`, `information_schema`) e leitura do código real no
 > momento da escrita — nada foi inventado.
 >
-> **Atualizado em:** 2026-08-09, sessão que implementou dois módulos em
-> sequência: **Planejamento/Orçamento** (repository → service → hook →
-> componentes → página) e, na continuação da mesma sessão,
-> **Relatórios** (reaproveitando as views financeiras já existentes,
-> sem tabela nova). Ambos com testes financeiros e de segurança reais no
-> banco de produção e testes de UI no navegador (desktop, mobile 375px,
-> dark mode). Relatórios também corrigiu um **bug real pré-existente**:
-> a view `v_net_worth` estava quebrada para qualquer usuário desde a
-> Fase 1 (ver seção 2 e seção 13.1-B). Ver `docs/MODULO_4.md` Partes 5 e
-> 6 para o detalhamento completo. A seção 12 abaixo é um registro
-> histórico de uma sessão anterior (mantida por completude, não é mais o
-> estado atual).
+> **Atualizado em:** 2026-08-09/10 — **a Fase 4 está 100% concluída.**
+> Nesta sequência de sessões foram implementados, em ordem,
+> **Planejamento/Orçamento**, **Relatórios**, **Configurações** e
+> **Calendário** (repository → service → hook → componentes → página em
+> todos), seguidos de uma **auditoria geral do sistema inteiro** (21
+> áreas: arquitetura, TypeScript, ESLint, build, banco, RLS, segurança
+> multiusuário, integridade financeira, performance, cache, UX,
+> responsividade, dark mode, etc.) e de uma **auditoria financeira
+> cruzada** entre todos os módulos (Dashboard, Relatórios, Contas,
+> Transações, Cartões, Metas, Investimentos, Empréstimos, Orçamento,
+> Calendário). Dois bugs reais adicionais foram encontrados e corrigidos
+> na auditoria (ver seção 11). **Não existe mais nenhuma página
+> `ComingSoon`.** Ver `docs/MODULO_4.md` Partes 5-8 + seção de auditoria
+> (53-56) para o detalhamento completo de cada módulo e da auditoria.
+> Este documento foi reescrito para refletir o estado final — as seções
+> antigas de "análise preliminar" dos módulos (antiga seção 13) foram
+> convertidas em registro histórico ou removidas onde já cumpridas.
 
 ---
 
@@ -28,7 +33,9 @@
 - **Objetivo:** aplicativo de gestão financeira pessoal completa — contas,
   categorias, transações (receitas/despesas), recorrências, tags, centros
   de custo, anexos, cartões/faturas, metas, investimentos, empréstimos,
-  financiamentos, orçamento e relatórios. Restam: calendário, configurações.
+  financiamentos, orçamento, relatórios, configurações e calendário
+  financeiro. **Todos os módulos da Fase 4 estão implementados — nenhuma
+  página `ComingSoon` restante.**
 - **Frontend:** React 19 + TypeScript (modo `strict`), Vite 8.
 - **Backend:** Supabase — Postgres 17.6, Auth, Storage. Nenhum backend
   próprio (Node/API): o frontend fala diretamente com o Supabase via
@@ -57,31 +64,35 @@
 
 ## 2. Estado atual do Git
 
-Confirmado ao final desta sessão:
+Confirmado nesta sessão (antes do commit final de documentação):
 
 ```
 branch atual:      develop
-working tree:      limpo (após o commit do módulo de Relatórios abaixo)
-HEAD local:         (commit de Relatórios — confira com git log -5)
-origin/develop:     idêntico ao HEAD local
+working tree:      docs/*.md modificados, ainda não commitados (ver seção abaixo)
+HEAD local:         77cba4b
+origin/develop:     77cba4b (idêntico ao HEAD local)
 origin/main:        eb92bfa  (intacta, nenhum push desde o commit inicial)
 ```
 
-Histórico (mais recente primeiro, no momento em que este parágrafo foi
-escrito — confira `git log --oneline -8` para o estado real):
+Histórico (mais recente primeiro):
 
 ```
-<novo>   feat(relatorios): implementa modulo de relatorios financeiros
+77cba4b  fix(auditoria): corrige bugs reais encontrados na auditoria geral
+d5d640d  feat(calendario): implementa calendario financeiro consolidado
+ba6108d  feat(configuracoes): implementa perfil, tema, metas financeiras e senha
+a89ca50  feat(relatorios): implementa modulo de relatorios financeiros
 e5e457f  docs: atualiza handoff apos modulo de planejamento e orcamento
 cad741d  feat(planejamento): implementa modulo de orcamento
 cb22baa  chore: trigger Vercel deployment
 86c68dc  docs: prepara handoff para continuidade da fase 4
 8a0c9f4  feat(financeiro): implementa emprestimos e financiamentos
-820cc56  feat(financeiro): implementa investimentos
-a1cdc99  feat(financeiro): implementa metas financeiras
 ```
 
-**Migration aplicada nesta sessão (Relatórios):**
+Um commit final de documentação (`docs: ...`) fecha esta sequência de
+sessões — confira `git log --oneline -6` para confirmar que ele já está
+em `origin/develop` no momento em que você lê isto.
+
+**Migration aplicada — Relatórios (`a89ca50`):**
 `fix_v_net_worth_auth_users_permission` — corrige um bug real
 pré-existente (não uma vulnerabilidade): `v_net_worth` dependia de
 `auth.users`, tabela sem `GRANT SELECT` para `authenticated`, e por
@@ -92,15 +103,14 @@ silenciosamente. Corrigida trocando `FROM auth.users` por `FROM
 financeira. Detalhe completo, com testes antes/depois, em
 `docs/BANCO_DE_DADOS.md` seção 32 e `docs/MODULO_4.md` seção 38.
 
-**Nota histórica desta sessão (Orçamento):** os commits `cad741d`
-(módulo de Planejamento/Orçamento) e `cb22baa` (trigger de deploy
-Vercel) já estavam em `origin/develop` quando a verificação inicial
-desta sessão rodou pela segunda vez — evidência de que a implementação
-já havia sido commitada numa passagem anterior da mesma sessão (antes
-de uma retomada/retry). Confirmado sem divergência de conteúdo
-(`git diff cad741d` vazio para os arquivos já cobertos); só
-`docs/HANDOFF_CONTINUIDADE.md` precisou de um commit de documentação
-separado (`e5e457f`).
+**Configurações (`ba6108d`) e Calendário (`d5d640d`): sem migration** —
+nenhum dos dois módulos precisou de alteração de schema (`docs/MODULO_4.md`
+Partes 7-8; `docs/BANCO_DE_DADOS.md` seção 33).
+
+**Auditoria geral (`77cba4b`):** 2 bugs reais adicionais encontrados e
+corrigidos, sem migration — `type="button"` faltando em
+`user-menu.tsx` e falta de invalidação de `["calendar"]` em 7 hooks de
+mutação. Ver seção 11.
 
 ---
 
@@ -115,16 +125,18 @@ separado (`e5e457f`).
 | Fase 4 — Metas | ✅ CONCLUÍDA | Commit `a1cdc99`, sem migration |
 | Fase 4 — Investimentos | ✅ CONCLUÍDA | Commit `820cc56`, sem migration |
 | Fase 4 — Empréstimos/Financiamentos | ✅ CONCLUÍDA | Commit `8a0c9f4`, sem migration |
-| Fase 4 — Planejamento/Orçamento | ✅ CONCLUÍDA | Esta sessão, sem migration — ver seção 13.1 e `MODULO_4.md` Parte 5 |
-| Fase 4 — Relatórios | ✅ CONCLUÍDA | Esta sessão, 1 migration (bug real em `v_net_worth`, não vulnerabilidade) — ver seção 13.3 e `MODULO_4.md` Parte 6 |
-| Fase 4 — Calendário | ⛔ NÃO IMPLEMENTADO | Próximo — análise preliminar seção 13.2 |
-| Fase 4 — Configurações | ⛔ NÃO IMPLEMENTADO | Análise preliminar seção 13.4 |
+| Fase 4 — Planejamento/Orçamento | ✅ CONCLUÍDA | Commit `cad741d`, sem migration — `MODULO_4.md` Parte 5 |
+| Fase 4 — Relatórios | ✅ CONCLUÍDA | Commit `a89ca50`, 1 migration (bug real em `v_net_worth`, não vulnerabilidade) — `MODULO_4.md` Parte 6 |
+| Fase 4 — Configurações | ✅ CONCLUÍDA | Commit `ba6108d`, sem migration — `MODULO_4.md` Parte 7 |
+| Fase 4 — Calendário | ✅ CONCLUÍDA | Commit `d5d640d`, sem migration — `MODULO_4.md` Parte 8 |
+| Auditoria geral do sistema + auditoria financeira cruzada | ✅ CONCLUÍDA | Commit `77cba4b` (2 bugs reais corrigidos) — `MODULO_4.md` seções 53-56 |
 
-No início desta sessão, 4 páginas eram `ComingSoon` —
-`src/pages/planning/planning.tsx`, `src/pages/calendar/calendar.tsx`,
-`src/pages/reports/reports.tsx`, `src/pages/settings/settings.tsx`.
-Ao final desta sessão, `planning.tsx` e `reports.tsx` passaram a ser
-páginas completas — **restam 2** (Calendário, Configurações).
+**A Fase 4 está 100% concluída — 8 de 8 módulos implementados.** As 4
+páginas que eram `ComingSoon` no início desta sequência de sessões
+(`src/pages/planning/planning.tsx`, `src/pages/calendar/calendar.tsx`,
+`src/pages/reports/reports.tsx`, `src/pages/settings/settings.tsx`) são
+hoje páginas completas, testadas e documentadas. **Não existe mais
+nenhuma página `ComingSoon` no projeto.**
 
 ---
 
@@ -135,17 +147,20 @@ páginas completas — **restam 2** (Calendário, Configurações).
 | `docs/HANDOFF_CONTINUIDADE.md` | Este arquivo — ponto de entrada |
 | `docs/CONTEXTO_PROJETO.md` | Histórico detalhado sessão a sessão desde a Fase 1, incluindo auditorias de segurança (seção 31: migration `0034`) e resumos de cada módulo da Fase 4 |
 | `docs/MODULO_3.md` | Decisões técnicas da Fase 3 (transações, saldo, parcelamento, recorrências) |
-| `docs/MODULO_4.md` | **O mais importante para os módulos da Fase 4** — 4 partes, uma por módulo já implementado (Cartões/Faturas, Metas, Investimentos, Empréstimos/Financiamentos), cada uma com decisões, fórmulas, testes, bugs e pendências |
+| `docs/MODULO_4.md` | **O mais importante para os módulos da Fase 4** — 8 partes, uma por módulo (Cartões/Faturas, Metas, Investimentos, Empréstimos/Financiamentos, Orçamento, Relatórios, Configurações, Calendário), cada uma com decisões, fórmulas, testes, bugs e pendências, mais uma seção final de auditoria geral do sistema (bugs encontrados/corrigidos, achados documentados não corrigidos) |
 | `docs/ARQUITETURA.md` | Padrões de código: camadas, TanStack Query, formulários, dialogs, erros, convenções |
 | `docs/BANCO_DE_DADOS.md` | Schema completo: tabelas, enums, views, functions, RLS, segurança — **atualizado a cada módulo da Fase 4** |
 | `docs/REGRAS_DE_NEGOCIO.md` | Regras por domínio, marcadas `[UI]`/`[Backend]`/`[Requer confirmação]` |
 
 **Leia nesta ordem na próxima sessão:** este arquivo → `MODULO_4.md`
-(seção do módulo que for implementar, se já tiver alguma análise) →
+(se a próxima tarefa envolver um módulo já implementado, ou a seção de
+auditoria se for uma dúvida sobre o estado geral) →
 `BANCO_DE_DADOS.md`/`REGRAS_DE_NEGOCIO.md` (seções relevantes) →
 `ARQUITETURA.md` só se precisar relembrar um padrão específico. **Não é
-necessário reler tudo — os quatro módulos já implementados estão
-completamente documentados e não precisam de nova investigação.**
+necessário reler tudo — os 8 módulos da Fase 4 já implementados estão
+completamente documentados e não precisam de nova investigação.** Não
+há um "próximo módulo" definido — ver seção 14 (reescrita) para
+orientação sobre possíveis próximos passos.
 
 ---
 
@@ -268,6 +283,65 @@ completamente documentados e não precisam de nova investigação.**
 
 ---
 
+## 7.1 Orçamento, Relatórios, Configurações e Calendário — o que já foi construído
+
+Resumo dos 4 módulos finais da Fase 4 (detalhe completo em
+`docs/MODULO_4.md` Partes 5-8). Todos seguem `repository → service →
+hook → component/page`, nenhum criou tabela nova.
+
+### Orçamento (`/planejamento`)
+
+CRUD sobre a tabela `budgets` já existente desde a Fase 1; "realizado"
+nunca armazenado, sempre recalculado ao vivo com o mesmo filtro que a
+trigger `check_budget_alerts` usa (`despesa` + `pago` + mês/ano de
+`date`), evitando divergência com os alertas reais do banco. Sem
+migration — `budgets` é tabela folha, sem filhos.
+
+### Relatórios (`/relatorios`)
+
+4 seções (visão geral, por categoria, fluxo de caixa, patrimônio), todas
+reaproveitando views já existentes (`v_monthly_summary`,
+`v_category_summary`, `v_cash_flow_daily`, `v_net_worth`) — nenhum
+cálculo financeiro novo no frontend. Corrigiu o bug real de
+`v_net_worth` (seção 2).
+
+### Configurações (`/configuracoes`)
+
+- **Perfil:** `full_name`/`avatar_url` de `profiles`, via
+  `settings.repository.ts` → `useUpdateProfile()` (chama
+  `refreshProfile()` do `AuthContext`, não uma query TanStack — `profile`
+  não vive no cache de query).
+- **Aparência:** tema controlado **diretamente por `next-themes`**
+  (`useTheme().setTheme()`), **não** por `profiles.theme` — decisão
+  tomada após confirmar que os dois sistemas estavam de fato
+  desconectados (nenhum componente lia/escrevia `profiles.theme`);
+  documentada como `[Requer confirmação]` se algum dia for necessário
+  sincronizar persistência de tema entre dispositivos.
+- **Metas financeiras:** `monthly_goal`/`annual_goal` de `profiles`,
+  agora com consumidor real (form + card de progresso reaproveitando
+  `useMonthlySummariesQuery`).
+- **Segurança:** troca de senha via `supabase.auth.updateUser()` (novo
+  `updatePassword()` em `AuthContext`), reaproveitando o schema Zod já
+  existente de `resetPasswordSchema`.
+- **`currency`/`language` de `profiles`:** deliberadamente **não**
+  expostos como editáveis (sem efeito real no app hoje) — mostrados como
+  texto informativo estático.
+- Sem migration.
+
+### Calendário (`/calendario`)
+
+Grade de mês customizada (date-fns, não o `react-day-picker` de
+`src/components/ui/calendar.tsx`, inadequado para células com conteúdo
+rico). Agrega 6 fontes de eventos financeiros num único hook
+(`useCalendarEvents`, 6 `useQuery` em paralelo — sem view/tabela nova,
+sem N+1): `transactions.due_date`, `card_invoices.due_date`,
+`loan_installments.due_date`, `financing_installments.due_date`,
+`goals.target_date`, `recurring_rules.next_run_date` (só a **próxima**
+ocorrência armazenada, sem projetar futuras — evita divergir da lógica
+real de `_next_recurrence_date`). Sem migration.
+
+---
+
 ## 8. Estado real do banco — confirmado nesta sessão, não presumido
 
 - **Migrations conhecidas:** 36 (`0001`–`0036`). `0034` e `0035` da Fase
@@ -332,15 +406,18 @@ completamente documentados e não precisam de nova investigação.**
 | Investimentos | `current_amount` sobe com aporte/rendimento, desce com resgate | `apply_investment_movement` |
 | Empréstimos/Financiamentos | `remaining_balance = sum(amount − paid_amount)` das parcelas não pagas | `recalc_loan_balance`/`recalc_financing_balance` |
 | Empréstimos/Financiamentos | Status `quitado`/`atrasado`/`ativo` derivado das parcelas | mesmas triggers acima |
+| Orçamento | `spent` (realizado) nunca armazenado, sempre agregado de `transactions` | `check_budget_alerts` (mesmo filtro replicado no frontend) |
 
 **Nenhuma dessas functions/triggers foi alterada em nenhum módulo da
 Fase 4.** Toda integração nova (Cartões, Metas, Investimentos,
-Empréstimos/Financiamentos) foi construída **em cima** delas, nunca
-duplicando o cálculo no frontend.
+Empréstimos/Financiamentos, Orçamento, Relatórios) foi construída **em
+cima** delas, nunca duplicando o cálculo no frontend. Configurações e
+Calendário não tocam saldo/valores financeiros (o primeiro só edita
+perfil/metas de exibição; o segundo só lê datas de vencimento).
 
 ---
 
-## 10. Testes já realizados nesta sessão (Fase 4 completa até Empréstimos/Financiamentos)
+## 10. Testes realizados ao longo da Fase 4 completa (todos os 8 módulos + auditoria)
 
 ### TypeScript / ESLint / Build
 
@@ -349,8 +426,8 @@ cada correção de bug: `npx tsc -b --noEmit` (0 erros em todas as
 rodadas), `npm run lint` (0 erros, sempre os mesmos 4 warnings
 pré-existentes de `shadcn/ui`, categoria
 `react-refresh/only-export-components` — não são regressão), `npm run
-build` (sucesso em todas as rodadas; bundle final ~1,56 MB / 429 KB
-gzip).
+build` (sucesso em todas as rodadas; bundle final da auditoria geral
+~1,63 MB / 445 KB gzip).
 
 ### Testes financeiros (banco de produção, usuários descartáveis, role `authenticated`)
 
@@ -367,11 +444,24 @@ gzip).
 - **Financiamentos SAC:** criação + parcelas com juros/amortização
   corretos, pagamento, quitação — valores conferidos contra o cálculo
   manual em Node antes de gravar no banco.
+- **Orçamento:** cascata de alertas 50→75→90→100%, monotonicidade
+  (flags não resetam), "realizado" batendo com o filtro real da trigger.
+- **Relatórios:** todos os 4 relatórios conferidos contra os mesmos
+  números do Dashboard/módulos de origem (mesma fonte de verdade);
+  `v_net_worth` retestada após o fix, agora não-zero para usuário real.
+- **Configurações:** metas mensais/anuais persistidas e refletidas
+  imediatamente no card de progresso (via `refreshProfile()`, sem
+  reload).
+- **Calendário:** cenário cruzado com Dashboard/Relatórios/Orçamento
+  (R$1.000 receita / R$300 despesa paga / R$700 resultado / R$700
+  patrimônio / R$100 pendente) confirmado idêntico nas 4 telas
+  simultaneamente (auditoria financeira cruzada).
 
 ### Testes de segurança / RLS multiusuário
 
-Para **cada** módulo (Cartões, Metas, Investimentos, Empréstimos,
-Financiamentos): dois usuários descartáveis criados via `auth.users`,
+Para **cada** módulo com escrita financeira (Cartões, Metas,
+Investimentos, Empréstimos, Financiamentos, Orçamento, Configurações):
+dois usuários descartáveis criados via `auth.users`,
 SELECT/UPDATE/DELETE cruzado testado (sempre 0 linhas afetadas/visíveis,
 dado real do usuário A confirmado intacto depois), e tentativa de
 `INSERT` na tabela filha referenciando `id` de A como B — em todos os
@@ -407,6 +497,30 @@ perfil).
 | 4 | Cartões | `useEffect`+`setState` desnecessário em `invoice-detail-sheet.tsx` (antipadrão `react-hooks/set-state-in-effect`) | Fatura selecionada derivada direto na renderização |
 | 5 | Metas | Sheet de detalhe mostrava progresso desatualizado após aporte (guardava snapshot do objeto) | `openGoalId` (string) + `.find()` na lista já buscada, em vez de `useState<Goal>` |
 | 6 | Empréstimos/Financiamentos | Card de listagem mostrava "% pago" negativo para financiamentos (`remaining_balance` inclui juros e pode ser > `principal_amount`) | Métrica removida do card; indicador correto por contagem de parcelas pagas adicionado ao detalhe |
+| 7 | Relatórios | `v_net_worth` sempre retornava `permission denied for table users` para qualquer usuário real desde a Fase 1 (`authenticated` nunca teve `GRANT SELECT` em `auth.users`) — Patrimônio líquido sempre `R$ 0,00` silenciosamente | Migration `fix_v_net_worth_auth_users_permission`: `FROM auth.users u` → `FROM (select auth.uid() as id) u` |
+| 8 | Calendário | Eventos com valor `0` (ex.: fatura recém-criada) exibiam `"+-R$ 0,00"` (gotcha de `-0` em JavaScript, falsy mas `Intl.NumberFormat` mostra o sinal) | `\|\| 0` normalizado em todos os pontos de negação de valor em `use-calendar.ts` |
+| 9 | Auditoria geral | `<button>` do `UserMenu` sem `type="button"` — mesma classe de bug do #1 | `type="button"` explícito |
+| 10 | Auditoria geral | 7 hooks de mutação (transações, faturas, empréstimos, financiamentos, metas, aportes de meta, recorrências) não invalidavam `["calendar"]`, deixando o Calendário com dados potencialmente desatualizados após ações em outros módulos | `queryClient.invalidateQueries({ queryKey: ["calendar"] })` adicionado às 7 funções `useInvalidate<Modulo>()` |
+
+### Achados documentados, não corrigidos nesta sessão (pendências reais, não bugs silenciosos)
+
+- **66 policies de RLS** ainda usam `auth.uid()` em vez de `(select
+  auth.uid())` (otimização de performance do Postgres/Supabase —
+  avaliada, aplicada só em `transactions` na migration `0027`; mudança
+  ampla demais para decidir às pressas numa única sessão).
+- **16 FKs sem índice** e **18 índices não utilizados**, ambos achados
+  do `get_advisors` (performance) — não corrigidos, requerem análise de
+  uso real antes de indexar/remover.
+- `v_monthly_summary`/`v_category_summary` não excluem transações com
+  `deleted_at` preenchido (soft delete) — potencial pequena divergência
+  se algum dia uma transação for excluída num período já fechado;
+  não reproduzido com dado real, documentado como observação.
+- `profiles.theme`/`currency`/`language` continuam sem sincronização
+  real com `next-themes`/sem efeito no app — decisão consciente desta
+  sessão (seção 7.1), não um bug.
+- `useLocalStorage("last-account-id")` não é escopado por usuário nem
+  limpo no logout — bug pré-existente de baixo impacto real,
+  documentado, fora do escopo dos módulos desta sessão.
 
 ### Padrões que NÃO devem ser quebrados
 
@@ -460,9 +574,15 @@ de Planejamento/Orçamento, com testes completos.
 
 ---
 
-## 13. Análise técnica dos 4 módulos restantes — SEM IMPLEMENTAR NADA
+## 13. Análise técnica dos 4 módulos da Fase 4 — todos ✅ CONCLUÍDOS
 
-### 13.1 Planejamento/Orçamento — ✅ CONCLUÍDO nesta sessão
+As 4 subseções abaixo registram, por completude histórica, a análise
+feita **antes** de cada implementação (schema, triggers, decisões de
+design) e o resultado real depois de implementado. **Todos os 4 módulos
+estão concluídos — não há mais nada pendente aqui.** Para a próxima
+fase do projeto (ainda não definida), ver seção 14.
+
+### 13.1 Planejamento/Orçamento — ✅ CONCLUÍDO
 
 Implementado por completo (`/planejamento`): CRUD de orçamento por
 categoria/mês/ano, "realizado" derivado ao vivo de `v_category_summary`
@@ -539,7 +659,22 @@ implementação.
 
 </details>
 
-### 13.2 Calendário — análise preliminar, não investigado a fundo
+### 13.2 Calendário — ✅ CONCLUÍDO
+
+Implementado por completo (`/calendario`): grade de mês customizada
+(date-fns), navegação por mês, agregação de 6 fontes de eventos
+(transações, faturas, parcelas de empréstimo/financiamento, metas,
+recorrências) sem tabela de eventos nova e sem N+1 (6 queries paralelas
+por mês exibido), `Sheet` de detalhe do dia com navegação para o módulo
+de origem, mobile, dark mode. Detalhamento completo em
+`docs/MODULO_4.md` Parte 8 (seções 47-52) — **não repita esta
+investigação**, a análise abaixo é o registro histórico de antes da
+implementação (as decisões nela indicadas — usar `formatDate()`
+existente para timezone, várias queries paralelas em vez de view nova,
+mostrar só a próxima ocorrência de recorrência — foram todas seguidas).
+
+<details>
+<summary>Investigação original (antes da implementação) — histórico</summary>
 
 **Não existe tabela "eventos" dedicada no banco.** Um calendário real
 precisaria agregar de várias fontes já existentes:
@@ -568,7 +703,9 @@ precisaria agregar de várias fontes já existentes:
   fonte) em vez de uma view SQL nova (evitar criar view/migration sem
   necessidade comprovada).
 
-### 13.3 Relatórios — ✅ CONCLUÍDO nesta sessão
+</details>
+
+### 13.3 Relatórios — ✅ CONCLUÍDO
 
 Implementado por completo (`/relatorios`): visão geral do período
 (KPIs + evolução mensal com intervalo de mês/ano selecionável),
@@ -632,7 +769,24 @@ como o role que a consome de verdade.
 
 </details>
 
-### 13.4 Configurações — análise preliminar
+### 13.4 Configurações — ✅ CONCLUÍDO
+
+Implementado por completo (`/configuracoes`): Perfil (nome/avatar),
+Aparência (tema via `next-themes` diretamente, decisão (a)/(b)/(c) da
+análise original resolvida como uma combinação: tema **não** sincroniza
+com `profiles.theme` — permanece só `next-themes` —, `monthly_goal`/
+`annual_goal` **ganharam** um consumidor real (form + card de
+progresso), `currency`/`language` permanecem **não editáveis** (opção
+(c), sem efeito real no app hoje). Segurança (troca de senha via
+`supabase.auth.updateUser()`, exatamente como recomendado abaixo).
+Exclusão de conta **não implementada** — confirmado como fora do
+escopo, mantido como `[Requer confirmação]` em
+`docs/REGRAS_DE_NEGOCIO.md`. Detalhamento completo em
+`docs/MODULO_4.md` Parte 7 (seções 44-46) — **não repita esta
+investigação**.
+
+<details>
+<summary>Investigação original (antes da implementação) — histórico</summary>
 
 **Tabela `profiles`** (confirmado via `information_schema` nesta sessão)
 — única fonte real de "configurações" no banco:
@@ -671,40 +825,49 @@ monthly_goal, annual_goal, created_at, updated_at
   versão**, registrar como `Requer confirmação` se não houver
   informação suficiente para decidir.
 
----
-
-## 14. Ordem de implementação recomendada
-
-1. ~~**Planejamento/Orçamento**~~ — ✅ CONCLUÍDO (seção 13.1).
-2. ~~**Relatórios**~~ — ✅ CONCLUÍDO nesta sessão, na sequência do
-   Orçamento (seção 13.3). Restam só Calendário e Configurações.
-3. **Configurações — recomendado como próximo módulo.** Menor risco
-   financeiro (não mexe em saldo/trigger nenhum) e, depois do
-   levantamento feito nesta sessão (seção 13.4), a ambiguidade principal
-   já está resolvida: `profiles.theme`/`monthly_goal`/`annual_goal` são
-   confirmadamente **não usados em nenhum lugar do código** hoje — a
-   próxima sessão só precisa decidir com o usuário o que fazer com eles
-   (sincronizar tema, usar as metas em algum KPI, ou não expor UI ainda),
-   não mais "investigar se são usados". Exclusão de conta continua como
-   `Requer confirmação`, fora do escopo de uma primeira versão.
-4. **Calendário** — deixado por último por ser o de maior incerteza de
-   design: sem tabela de eventos dedicada, precisa agregar
-   `transactions.due_date`, `card_invoices.due_date`, parcelas de
-   empréstimo/financiamento e `goals.target_date` de fontes heterogêneas
-   sem view pronta; também precisa decidir se projeta `recurring_rules`
-   várias ocorrências à frente ou só mostra a próxima.
-
-A próxima sessão pode reordenar se, durante a investigação de fato,
-encontrar um motivo técnico concreto — mas Configurações é a
-recomendação desta sessão, com a razão registrada acima.
+</details>
 
 ---
 
-## 15. Padrão de qualidade — repetir para cada módulo restante
+## 14. Fase 4 concluída — possíveis próximos passos (sem ordem definida)
 
-**Não é sobre velocidade. É sobre qualidade.** Cada um dos 4 módulos
-restantes deve seguir exatamente o mesmo ciclo já usado em Cartões,
-Metas, Investimentos e Empréstimos/Financiamentos:
+Todos os 8 módulos da Fase 4 estão implementados, testados e
+documentados (seção 13). **Não há um backlog de "próxima fase"
+definido pelo usuário até o momento desta atualização.** Itens abaixo
+são candidatos honestos, não uma decisão — a próxima sessão deve
+confirmar com o usuário antes de escolher um:
+
+1. **Dívida técnica documentada e não corrigida** (seção 11, "Achados
+   documentados") — a mais concreta e de menor risco para atacar
+   primeiro: as 66 policies de RLS com `auth.uid()` não otimizado, os 16
+   FKs sem índice, os 18 índices não utilizados. Todas são melhorias de
+   performance, não mudam comportamento — mas exigem teste de regressão
+   cuidadoso por serem uma mudança ampla (dezenas de policies).
+2. **`v_monthly_summary`/`v_category_summary` e soft delete** — avaliar
+   se excluir transações com `deleted_at` preenchido dos agregados é o
+   comportamento correto (parece que sim, mas precisa confirmar com o
+   usuário se há algum caso de uso que depende do comportamento atual).
+3. **Funcionalidades novas fora do escopo original da Fase 4** —
+   exportação de relatórios (CSV/PDF, mencionado como não investigado na
+   seção 13.3), exclusão de conta (Configurações, seção 13.4), projeção
+   de múltiplas ocorrências futuras de recorrências no Calendário (hoje
+   mostra só a próxima) — nenhuma delas tem requisito confirmado, todas
+   precisam de decisão explícita do usuário antes de implementar.
+4. **Deploy real** — o projeto ainda não tem frontend em produção nem
+   CI/CD (seção 1); só o banco Supabase está em produção. Se o próximo
+   passo for "colocar no ar", este documento não cobre esse processo.
+
+A próxima sessão deve perguntar ao usuário qual direção seguir antes de
+escolher — nenhuma das opções acima foi validada como prioridade.
+
+---
+
+## 15. Padrão de qualidade — repetir para qualquer novo módulo/mudança
+
+**Não é sobre velocidade. É sobre qualidade.** Qualquer trabalho futuro
+no projeto deve seguir exatamente o mesmo ciclo já usado nos 8 módulos
+da Fase 4 (Cartões, Metas, Investimentos, Empréstimos/Financiamentos,
+Orçamento, Relatórios, Configurações, Calendário):
 
 1. Investigar schema real (`information_schema`, não só `database.types.ts`).
 2. Ler o código-fonte de toda function/trigger relevante
@@ -748,23 +911,24 @@ fonte de verdade de Investimentos).
 
 ## CHECKLIST — PRÓXIMA SESSÃO
 
-Próximo módulo recomendado: **Configurações** (seção 14). Planejamento/
-Orçamento e Relatórios estão concluídos — não repita a implementação.
-Restam só Calendário e Configurações na Fase 4.
+**A Fase 4 está 100% concluída — não há um próximo módulo predefinido.**
+A primeira coisa a fazer na próxima sessão é **perguntar ao usuário**
+qual direção seguir (ver seção 14 para candidatos honestos: dívida
+técnica de performance, funcionalidades novas fora do escopo original,
+deploy). Não presuma um módulo específico.
 
 - [ ] Ler este arquivo (`HANDOFF_CONTINUIDADE.md`) por completo
 - [ ] Confirmar `git branch --show-current`, `git status`, `git log -10`
 - [ ] Confirmar `git ls-remote origin` (branch `develop` = HEAD local;
       `main` = `eb92bfa`)
 - [ ] Confirmar working tree limpo
-- [ ] Ler a parte relevante de `docs/MODULO_4.md` (seção 13.4 deste
-      handoff resume Configurações; Partes 5-6 documentam Orçamento e
-      Relatórios, já concluídos)
-- [ ] Inspecionar o banco real do módulo escolhido antes de codificar
-      (mesmo que este handoff já tenha uma análise — confirmar que nada
-      mudou)
+- [ ] Perguntar ao usuário qual é o próximo objetivo (seção 14) antes de
+      escolher qualquer trabalho
+- [ ] Se o trabalho envolver banco: inspecionar o schema real antes de
+      codificar, mesmo que a documentação já pareça cobrir o caso
 - [ ] Investigar functions/triggers relevantes via `pg_get_functiondef`
-- [ ] Investigar RLS/policies
+      antes de presumir comportamento
+- [ ] Investigar RLS/policies antes de qualquer mudança de segurança
 - [ ] Se houver tabela filha nova: testar ownership empiricamente antes
       de decidir sobre migration
 - [ ] Implementar em camadas (`repository → service → hook →
@@ -772,15 +936,18 @@ Restam só Calendário e Configurações na Fase 4.
 - [ ] TypeScript (0 erros)
 - [ ] ESLint (0 erros, comparar com baseline de 4 warnings)
 - [ ] Build (sucesso)
-- [ ] Testes financeiros reais no banco
-- [ ] Testes de segurança multiusuário reais
-- [ ] Testes de UI no navegador
+- [ ] Testes financeiros reais no banco, se aplicável
+- [ ] Testes de segurança multiusuário reais, se aplicável
+- [ ] Testes de UI no navegador, se aplicável
 - [ ] Mobile (~375px)
 - [ ] Dark mode
 - [ ] Console sem erros novos
 - [ ] Remover dados de teste, confirmar contagem zero
 - [ ] Atualizar documentação (`MODULO_4.md`, `BANCO_DE_DADOS.md`,
-      `REGRAS_DE_NEGOCIO.md`, `CONTEXTO_PROJETO.md`)
-- [ ] Commit isolado do módulo
-- [ ] Push para `origin/develop`
-- [ ] Relatório do módulo concluído
+      `REGRAS_DE_NEGOCIO.md`, `CONTEXTO_PROJETO.md`, `ARQUITETURA.md`,
+      este arquivo)
+- [ ] Commit isolado por unidade de trabalho, arquivos listados
+      explicitamente (nunca `git add -A`/`git add .`)
+- [ ] Push **somente** para `origin/develop`. Nunca `main`, nunca
+      `--force`
+- [ ] Relatório honesto do que foi feito

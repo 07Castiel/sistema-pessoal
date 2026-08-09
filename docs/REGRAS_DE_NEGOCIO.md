@@ -501,11 +501,50 @@ regra financeira. Ver `BANCO_DE_DADOS.md` seção 32.
 
 ---
 
+## 22. Relatórios — **[UI]** (implementado na Fase 4)
+
+## 23. Configurações — **[UI]** (implementado na Fase 4)
+
+Página `/configuracoes`: perfil (nome, URL de avatar), tema (reaproveita
+o `next-themes` já usado pelo `ThemeToggle` do cabeçalho — não é um
+sistema paralelo), metas financeiras (`profiles.monthly_goal`/
+`annual_goal`, com indicador de progresso do mês atual reaproveitando o
+mesmo dado já buscado por Relatórios) e alteração de senha (via
+`supabase.auth.updateUser`).
+
+**Moeda/idioma exibidos como informativos, não editáveis** — o app não
+tem suporte real a multi-moeda nem i18n hoje (`formatCurrency` sempre
+usa `BRL`, nenhuma string do app é traduzível); um seletor que não muda
+nenhum comportamento real seria uma UI enganosa. `profiles.currency`/
+`language` continuam sem consumidor de escrita — `[Requer confirmação]`
+se vale a pena implementar de verdade no futuro.
+
+**Sem alteração de e-mail nem exclusão de conta** — decisões de escopo
+documentadas em `docs/MODULO_4.md` Parte 7, não omissões.
+
+## 24. Calendário Financeiro — **[UI]** (implementado na Fase 4)
+
+Página `/calendario`: visualização mensal agregando 6 fontes já
+existentes (transações com vencimento, faturas de cartão, parcelas de
+empréstimo/financiamento, prazo de metas, próxima ocorrência de
+recorrência) — **sem tabela de eventos própria**, para não duplicar dado
+já mantido corretamente em cada módulo de origem.
+
+**Só a próxima ocorrência de recorrência já calculada é mostrada** — o
+Calendário não projeta ocorrências futuras além de
+`recurring_rules.next_run_date`, para não simular a lógica de
+`_next_recurrence_date` no frontend e arriscar divergir dela.
+
+**Sem filtro por conta ou tipo de evento na própria página** — a
+legenda de cores é só informativa; não solicitado, não implementado.
+
+---
+
 ## Resumo por status de implementação
 
 | Status | Domínios |
 |---|---|
-| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4), Investimentos (Fase 4), Empréstimos (Fase 4), Financiamentos (Fase 4), Orçamentos (Fase 4), Relatórios (Fase 4) |
-| **[UI] parcial** | Anexos (só Contas + Transações), Notificações (só o sino, sem central; sino não invalida em tempo real após mutações — lacuna pré-existente, não introduzida pelo módulo de Orçamentos) |
+| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4), Investimentos (Fase 4), Empréstimos (Fase 4), Financiamentos (Fase 4), Orçamentos (Fase 4), Relatórios (Fase 4), Configurações (Fase 4), Calendário (Fase 4) — **Fase 4 100% concluída, nenhum módulo `ComingSoon` restante** |
+| **[UI] parcial** | Anexos (só Contas + Transações), Notificações (só o sino, sem central; sino não invalida em tempo real após mutações — lacuna pré-existente) |
 | **[Backend] pronto, sem UI** | Transferências |
-| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), unidade de `financings.interest_rate` (percentual vs. fração), alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id`/`investment_movements.investment_id`/`loan_installments.loan_id`/`financing_installments.financing_id`/`budgets.category_id` (todas revisadas, sem impacto comprovado — ver `MODULO_4.md`), `v_monthly_summary`/`v_category_summary` não excluem transações na lixeira do total (diferente de `v_cash_flow_daily` e do saldo de conta) — ver `BANCO_DE_DADOS.md` seção 32 |
+| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), unidade de `financings.interest_rate` (percentual vs. fração), alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id`/`investment_movements.investment_id`/`loan_installments.loan_id`/`financing_installments.financing_id`/`budgets.category_id` (todas revisadas, sem impacto comprovado — ver `MODULO_4.md`), `v_monthly_summary`/`v_category_summary` não excluem transações na lixeira do total (diferente de `v_cash_flow_daily` e do saldo de conta) — ver `BANCO_DE_DADOS.md` seção 32, `profiles.theme`/`currency`/`language` sem sincronização real com o comportamento do app — ver seção 23, performance de RLS (`(select auth.uid())` não aplicado fora de `transactions`) — ver `BANCO_DE_DADOS.md` seção 34 |

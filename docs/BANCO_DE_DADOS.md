@@ -850,3 +850,41 @@ de `v_net_worth` somar `loans.remaining_balance`/
 ficar desatualizado após pagar/quitar um empréstimo ou financiamento até
 um reload manual. Corrigido junto (mesmo padrão das outras 6
 invalidações, mudança de 2 linhas por arquivo).
+
+## 33. Configurações e Calendário — sem alteração de schema
+
+Ambos os últimos módulos da Fase 4 (`docs/MODULO_4.md` Partes 7-8) não
+criaram tabela, view, function nem trigger nova:
+
+- **Configurações** só passou a escrever em colunas de `profiles` que já
+  existiam desde a Fase 1 (`full_name`, `avatar_url`, `monthly_goal`,
+  `annual_goal`) e a usar `supabase.auth.updateUser` (SDK de Auth, não
+  schema próprio).
+- **Calendário** só lê `due_date`/`target_date`/`next_run_date` de 6
+  tabelas/view já existentes, sem escrever em nenhuma.
+
+## 34. Achado de performance — `get_advisors`, não corrigido nesta sessão
+
+Auditoria final (`docs/MODULO_4.md` seção 55) rodou `get_advisors` tipo
+`performance` pela primeira vez de forma abrangente nesta Fase 4 e
+encontrou **66 ocorrências de "Auth RLS Initialization Plan"** — várias
+policies RLS do schema chamam `auth.uid()` diretamente em vez de
+`(select auth.uid())`, fazendo a function ser reavaliada linha a linha
+em vez de uma vez por query (otimização conhecida do Postgres/Supabase
+para RLS). A migration `0027` já aplicou esse padrão em `transactions`
+(Fase 3) — as demais tabelas do schema (a maioria das 24) ainda usam a
+forma não otimizada, uma lacuna que já existia desde a Fase 1, não
+introduzida por nenhum módulo desta Fase 4.
+
+**Não corrigido nesta sessão** — é uma mudança ampla (dezenas de
+policies em quase todas as tabelas), significativa demais para um
+ajuste apressado dentro de uma sessão focada em finalizar módulos.
+Requer sua própria sessão dedicada: revisar cada policy, reescrever com
+`(select auth.uid())`, testar RLS antes/depois de cada tabela. Impacto
+real no volume atual (app pessoal, não milhões de linhas) é baixo — não
+bloqueante, mas real e documentado para quando o projeto crescer ou
+para uma sessão de hardening futura.
+
+Também reportadas (mesma varredura, mesma decisão de não agir sem
+necessidade comprovada): 16 "Unindexed foreign keys" e 18 "Unused
+Index", ambas de baixo impacto no volume atual.
