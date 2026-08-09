@@ -226,16 +226,65 @@ compra no cartão (não suportado nesta primeira versão);
 fatura (comportamento herdado da trigger, não corrigido nesta sessão por
 exigir definição de regra antes).
 
-## 15. Investimentos — **[Backend]**
+## 15. Investimentos — **[UI]** (implementado na Fase 4)
 
-Tabelas `investments`, `investment_movements`, trigger
-`apply_investment_movement` (enum `investment_movement_type`: `aporte`,
-`resgate`, `rendimento`) — smoke-testados. **Rota `/investimentos` é
-`ComingSoon`.** Nota de modelagem (`MODULO_3.md`): aporte pode também
-ser registrado como despesa com categoria tipo `investimento`, e
-rendimento como receita com a mesma categoria — os dois modelos (tabela
-dedicada vs. transação categorizada) coexistem no schema; qual a UI
-futura vai usar como fonte de verdade é **[Requer confirmação]**.
+CRUD de investimentos (`/investimentos`): nome, tipo (`tesouro`/`cdb`/
+`lci`/`lca`/`fundos`/`acoes`/`fiis`/`etfs`/`cripto`/`exterior`),
+instituição (opcional), data de aplicação, vencimento (opcional),
+liquidez (texto livre, opcional), rentabilidade (texto livre, opcional),
+conta associada (opcional, só informativa), observações.
+
+**`applied_amount` e `current_amount` nunca são escritos pelo frontend**
+— 100% derivados por `apply_investment_movement` a partir das
+movimentações. Nascem em `0` na criação; um investimento recém-criado só
+passa a ter valor depois do primeiro aporte.
+
+**Movimentações (aporte/resgate/rendimento):**
+- `amount` é sempre uma magnitude positiva; o sentido do efeito vem do
+  `type` selecionado (diferente de Metas, que usa o sinal do próprio
+  valor).
+- **Aporte** soma em `applied_amount` (principal) e `current_amount`
+  (valor atual).
+- **Rendimento** soma **só** em `current_amount` — não conta como
+  principal aportado.
+- **Resgate** subtrai de `current_amount` — **não reduz**
+  `applied_amount`, que permanece como o total histórico aportado.
+- **Editar uma movimentação existente é suportado** (tipo e valor) — a
+  trigger reprocessa o efeito antigo e aplica o novo corretamente; testado
+  com valores reais.
+- Excluir uma movimentação recalcula `applied_amount`/`current_amount`
+  automaticamente.
+
+**Exclusão do investimento:** sempre física — **o schema não tem
+`deleted_at` nem coluna de status** em `investments` (diferente de
+Contas/Categorias/Transações/Recorrências), então **não há suporte a
+restaurar**. A UI avisa explicitamente no diálogo de confirmação que a
+exclusão remove também todo o histórico de movimentações
+(`ON DELETE CASCADE`) e não pode ser desfeita.
+
+**Aparência:** sem colunas `color`/`icon` no schema — a UI deriva ícone e
+cor de `type` via um mapa fixo no frontend, não personalizável por
+investimento individual.
+
+**Patrimônio líquido:** `v_net_worth.total_investments` soma
+`current_amount` de todos os investimentos do usuário — qualquer
+movimentação reflete automaticamente no dashboard.
+
+**[Requer confirmação — não alterado, mantido como estava]:** nota de
+modelagem de `MODULO_3.md` permanece válida — aporte/rendimento também
+*podem* ser registrados como transação categorizada (despesa/receita com
+categoria tipo `investimento`), um caminho paralelo que não foi unificado
+com `investment_movements` nesta sessão. Os dois modelos coexistem no
+schema; qual a UI deve tratar como fonte de verdade principal continua em
+aberto.
+
+**[Requer confirmação — achado revisado, não corrigido, ver
+`docs/MODULO_4.md` seção 18]:** `investment_movements.investment_id` não
+tem validação de ownership via trigger. Testado e confirmado que isso
+**não permite corromper** `applied_amount`/`current_amount` de outro
+usuário (RLS de `investments` bloqueia a atualização cruzada dentro da
+própria trigger) — decisão deliberada de não criar migration, mesma
+lógica aplicada em Metas.
 
 ## 16. Metas — **[UI]** (implementado na Fase 4)
 
@@ -332,7 +381,7 @@ liste todos os eventos do sistema.
 
 | Status | Domínios |
 |---|---|
-| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4) |
+| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4), Investimentos (Fase 4) |
 | **[UI] parcial** | Anexos (só Contas + Transações), Notificações (só o sino, sem central) |
-| **[Backend] pronto, sem UI** | Transferências, Investimentos, Orçamentos, Empréstimos, Financiamentos |
-| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), se Empréstimos e Financiamentos serão uma tela ou duas, alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id` (revisada, sem impacto comprovado — ver `MODULO_4.md` seção 11) |
+| **[Backend] pronto, sem UI** | Transferências, Orçamentos, Empréstimos, Financiamentos |
+| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), se Empréstimos e Financiamentos serão uma tela ou duas, alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id` e `investment_movements.investment_id` (ambas revisadas, sem impacto comprovado — ver `MODULO_4.md` seções 11 e 18) |

@@ -1031,3 +1031,36 @@ completo em `docs/MODULO_4.md`, Parte 2 (seções 10-15). Resumo:
   recálculo) + RLS multiusuário incluindo o ataque de `goal_id` de outro
   usuário — todos os dados de teste removidos, contagem zero confirmada.
 - TypeScript/ESLint/build: 0 erros.
+
+**Terceiro módulo da Fase 4 (mesma sessão): Investimentos.** Backend
+(`investments`, `investment_movements`) também já existia desde a Fase 1.
+Detalhamento completo em `docs/MODULO_4.md`, Parte 3 (seções 16-21).
+Resumo:
+
+- **Nenhuma migration.** Mesma classe de achado de ownership de Metas
+  (`investment_movements.investment_id` sem trigger de validação) foi
+  investigada e testada — confirmado que não corrompe dado de outro
+  usuário (RLS de `investments` contém o dano na própria trigger).
+- **`applied_amount` (principal) só aumenta com aportes** — resgates e
+  rendimentos não o alteram, só afetam `current_amount` (valor atual).
+  Confirmado lendo o código-fonte de `apply_investment_movement` antes de
+  implementar, não presumido.
+- **Edição de movimentação implementada** (diferente de Metas) — a
+  trigger suporta `UPDATE` com reprocessamento completo de delta,
+  confirmado em teste real (editar resgate de 200→300 recalculou
+  corretamente).
+- **Sem soft delete** — `investments` não tem `deleted_at` nem coluna de
+  status no schema; exclusão é sempre física, sem opção de restaurar.
+  Limitação do schema, documentada como tal, não inventada solução
+  alternativa.
+- **Sem colunas `color`/`icon`** em `investments` (diferente de
+  Contas/Cartões/Metas) — aparência derivada de `type` via mapa fixo, não
+  personalizável.
+- Testado como role `authenticated`: 7 cenários financeiros (aporte,
+  rendimento, resgate, edição, exclusão, todos com valores exatos
+  conferidos) + RLS multiusuário incluindo o ataque de `investment_id` de
+  outro usuário. Três erros `406` e dois `403` observados no console
+  foram investigados (reproduzidos manualmente, confirmados como
+  pré-existentes de troca de sessão, não regressão). Dados de teste
+  removidos, contagem zero confirmada.
+- TypeScript/ESLint/build: 0 erros.

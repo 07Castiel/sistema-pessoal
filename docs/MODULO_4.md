@@ -1,4 +1,4 @@
-# Fase 4 — Cartões, Faturas e Metas
+# Fase 4 — Cartões, Faturas, Metas e Investimentos
 
 > **Parte 1 (seções 1-9): Cartões e Faturas.** Backend (`credit_cards`,
 > `card_invoices`, `v_card_usage`, trigger `recalc_invoice_total`) já
@@ -12,6 +12,13 @@
 > desde a Fase 1, sem UI. Implementada UI completa. **Nenhuma migration** —
 > módulo inteiramente aditivo sobre o schema existente, sem lacuna de
 > segurança que exigisse correção (ver seção 13).
+>
+> **Parte 3 (seções 16-21): Investimentos.** Backend (`investments`,
+> `investment_movements`, trigger `apply_investment_movement`) também já
+> existia desde a Fase 1, sem UI. Implementada UI completa, incluindo edição
+> de movimentações (suportada pela trigger, diferente de Metas). **Nenhuma
+> migration** — mesma classe de achado de ownership de Metas foi
+> investigada e confirmada sem impacto real (seção 18).
 
 ---
 
@@ -416,3 +423,160 @@ Nenhum arquivo de Cartões/Faturas ou de fases anteriores foi tocado.
   automaticamente.
 - Lacuna de ownership de `goal_contributions.goal_id` avaliada e não
   corrigida (seção 11) — decisão registrada, não uma omissão.
+
+---
+
+# Parte 3 — Investimentos
+
+Terceiro módulo implementado na Fase 4. Backend (`investments`,
+`investment_movements`, trigger `apply_investment_movement`) já existia
+desde a Fase 1. Módulo isolado: **nenhuma relação com contas, saldo ou
+transações** — confirmado lendo o código-fonte da trigger e o schema antes
+de implementar (`investments.account_id` é só um vínculo informativo
+opcional, sem nenhum trigger que o utilize).
+
+## 16. Modelo confirmado lendo o código-fonte da trigger
+
+`apply_investment_movement` (`AFTER INSERT/UPDATE/DELETE` em
+`investment_movements`, `SECURITY INVOKER`), lida via
+`pg_get_functiondef` antes de implementar:
+
+- **`current_amount`** (valor atual): `aporte` e `rendimento` somam,
+  `resgate` subtrai.
+- **`applied_amount`** (valor aplicado/principal): **só `aporte` soma**;
+  `resgate` e `rendimento` **não alteram** `applied_amount`. Ou seja,
+  `applied_amount` é o total historicamente aportado (custo/base), nunca
+  diminui com resgates — confirmado empiricamente (seção 19: resgate de
+  200 não reduziu `applied_amount`, só `current_amount`).
+- **`UPDATE` reprocessa o delta completo** (reverte o efeito do valor/tipo
+  antigo, aplica o novo) — diferente de `goal_contributions` (só
+  create/delete implementados), aqui a trigger suporta editar tipo e
+  valor de uma movimentação com segurança, e a UI implementa essa edição.
+- **Sem CHECK de sinal em `amount`** — mas, diferente de
+  `goal_contributions` (retirada = valor negativo), aqui `amount` é
+  **sempre uma magnitude positiva**; o sinal do efeito vem do `type`
+  (`aporte`/`resgate`/`rendimento`), já que a trigger faz `case new.type
+  when 'resgate' then -new.amount else new.amount end`. `investmentMovementSchema.amount`
+  é `.positive()`.
+- **`v_net_worth.total_investments`** soma `current_amount` de todos os
+  investimentos do usuário, sem filtro — confirmado que o dashboard
+  (patrimônio líquido) reflete corretamente cada movimentação.
+
+## 17. Sem colunas `color`/`icon` em `investments`
+
+Diferente de Contas, Cartões, Metas e Centros de Custo, a tabela
+`investments` **não tem** colunas `color`/`icon` — confirmado lendo
+`database.types.ts` antes de desenhar o formulário. Em vez de
+`IconPicker`/`ColorPicker` (que exigiriam uma coluna para persistir a
+escolha), a aparência é derivada de `type` via um mapa fixo
+(`INVESTMENT_TYPE_META` em `investment.schema.ts`) — um ícone e uma cor
+por tipo de investimento (Tesouro, CDB, Ações etc.), não personalizável
+pelo usuário. Decisão de implementação necessária porque o schema não
+suporta personalização; não é uma omissão.
+
+## 18. Sem migration — mesmo achado de Metas, testado e confirmado contido
+
+Investigado antes de implementar: `investment_movements.investment_id`
+**não tem** trigger de validação de ownership (mesma ausência de
+`goal_contributions.goal_id`, ver Parte 2 seção 11). Testado
+explicitamente com dois usuários descartáveis (seção 20): usuário B
+conseguiu inserir uma `investment_movements` referenciando o investimento
+de A (a policy de INSERT só verifica `user_id = auth.uid()`), mas como
+`apply_investment_movement` é `SECURITY INVOKER`, a `UPDATE` que ela faz
+em `investments` roda com o privilégio de B — a RLS de `investments`
+bloqueia essa `UPDATE` cruzada. **Confirmado empiricamente:**
+`applied_amount`/`current_amount` do investimento de A permaneceram
+exatamente `1000.00`/`700.00` antes e depois do ataque (aporte de 99999
+inserido por B). Mesma decisão de Metas: não criar migration — a lacuna
+existe mas não permite corromper dado de outro usuário.
+
+## 19. Testes financeiros (banco de produção, usuário descartável, role `authenticated`)
+
+| Cenário | Esperado | Obtido | Resultado |
+|---|---|---|---|
+| Criar investimento | `applied_amount = 0`, `current_amount = 0` | `0.00` / `0.00` | ✅ |
+| Aporte de 1000 | `applied = 1000`, `current = 1000` | `1000.00` / `1000.00` | ✅ |
+| + Rendimento de 50 | `applied = 1000` (inalterado), `current = 1050` | `1000.00` / `1050.00` | ✅ |
+| + Resgate de 200 | `applied = 1000` (inalterado), `current = 850` | `1000.00` / `850.00` | ✅ (confirma que resgate não reduz `applied_amount`) |
+| Editar o resgate de 200 → 300 (`UPDATE`) | `current = 750` (1050−300) | `750.00` | ✅ (confirma reprocessamento de delta em `UPDATE`) |
+| Excluir o rendimento de 50 (`DELETE`) | `current = 700` (750−50) | `700.00` | ✅ |
+| `v_net_worth.total_investments` do usuário | `700.00` | `700.00` | ✅ |
+
+## 20. Testes de segurança / RLS multiusuário
+
+- B: `SELECT` do investimento de A = 0 linhas.
+- B: `UPDATE` (tentando renomear) e `DELETE` do investimento de A = 0
+  linhas afetadas; investimento de A confirmado intacto (nome, valores)
+  depois de ambas as tentativas.
+- B: `INSERT` de `investment_movements` com `investment_id` do
+  investimento de A = aceito (lacuna conhecida, seção 18), mas
+  `applied_amount`/`current_amount` de A **não foram corrompidos** —
+  confirmado antes/depois do ataque.
+
+## 21. Testes de UI e validação técnica
+
+- **Fluxo no navegador** (usuário descartável): criar investimento →
+  sheet de detalhe já reflete `R$ 0,00`/`R$ 0,00` sem precisar recarregar
+  → registrar aporte de R$ 1.000 → sheet atualiza imediatamente (valor
+  atual, aplicado e histórico) sem o bug de snapshot desatualizado que
+  ocorreu em Metas (aqui a página já nasceu com o padrão corrigido —
+  `openInvestmentId` + derivação da lista, não um `useState<Investment>`)
+  → editar a movimentação de R$ 1.000 para R$ 1.200 → sheet atualiza
+  imediatamente para `R$ 1.200,00` em valor atual e aplicado.
+- **Mobile/dark mode:** viewport 375px sem overflow horizontal
+  (`scrollWidth === clientWidth`); dark mode ativo.
+- **Console:** três erros `406` e dois `403` observados, mas **investigados
+  antes de descartar** — reproduzidos manualmente via `supabase-js` no
+  console do navegador (queries idênticas às do repository, todas
+  retornando `200`) e, ao inspecionar o log completo por bloco de
+  navegação, confirmado que os erros ocorreram só durante o registro/login
+  inicial (mesmo padrão pré-existente documentado desde a Fase 3 —
+  "esporádicos... em trocas de sessão"); o reload subsequente, com sessão
+  já estável, não produziu nenhum erro novo. Não é regressão desta fase.
+- **TypeScript** (`tsc -b --noEmit`): 0 erros.
+- **ESLint**: 0 erros, 4 warnings pré-existentes (mesmos de sempre).
+- **Build de produção:** sucesso, ~31s, bundle 1,52 MB / 424 KB gzip.
+- Todos os usuários e dados de teste (SQL e navegador) removidos,
+  contagem zero confirmada; dados reais (0 investimentos antes da sessão)
+  permaneceram intactos.
+
+## Arquivos criados/alterados (Investimentos)
+
+**Novos:**
+```
+src/schemas/investment.schema.ts                       investmentSchema + investmentMovementSchema + INVESTMENT_TYPE_META
+src/repositories/investments.repository.ts
+src/repositories/investment-movements.repository.ts
+src/services/investments.service.ts                    passthrough
+src/services/investment-movements.service.ts           passthrough
+src/hooks/use-investments.ts
+src/hooks/use-investment-movements.ts
+src/components/investments/investment-form-dialog.tsx
+src/components/investments/investment-card.tsx          tile com % de rentabilidade
+src/components/investments/investment-movement-dialog.tsx  aporte/resgate/rendimento, cria e edita
+src/components/investments/investment-detail-sheet.tsx  valor atual/aplicado/resultado + histórico editável
+```
+
+**Modificados:**
+```
+src/pages/investments/investments.tsx   ComingSoon → página completa
+docs/MODULO_4.md                        esta seção (Parte 3)
+docs/CONTEXTO_PROJETO.md                seção 33 estendida
+docs/BANCO_DE_DADOS.md                  seção 24 (Investimentos)
+docs/REGRAS_DE_NEGOCIO.md               seção 15 (Investimentos)
+docs/ARQUITETURA.md                     contagem de ComingSoon (5 restantes)
+```
+
+## Pendências não bloqueantes (Investimentos)
+
+- Sem anexos na tela de investimento — não solicitado.
+- Sem exclusão/restauração via soft delete — **o schema não suporta**
+  (`investments` não tem `deleted_at` nem coluna de status, diferente de
+  Contas/Categorias/Transações/Recorrências). Exclusão é sempre física,
+  com aviso explícito de que não há como restaurar. Registrado como
+  limitação do schema, não uma omissão de implementação.
+- Lacuna de ownership de `investment_movements.investment_id` avaliada e
+  não corrigida (seção 18) — decisão registrada, mesma classe do achado
+  de Metas.
+- `investments.account_id` é só informativo — não integrado a nenhum
+  fluxo funcional (sem efeito em saldo, sem filtro cruzado).

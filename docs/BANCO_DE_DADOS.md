@@ -419,9 +419,42 @@ migration aprovada nesta sessão).
 
 ## 24. Investimentos
 
-Tabelas `investments`/`investment_movements`, trigger
-`apply_investment_movement` já ativo e smoke-testado (aporte 100 →
-aplicado/atual 100). **Sem UI** — rota `/investimentos` é `ComingSoon`.
+Tabelas `investments`/`investment_movements`. **UI implementada na Fase
+4** (`docs/MODULO_4.md`, Parte 3) — rota `/investimentos`. Módulo isolado:
+sem relação com contas, saldo ou transações (`investments.account_id` é
+só um vínculo informativo opcional, sem trigger que o utilize).
+
+- **`apply_investment_movement`** (`AFTER INSERT/UPDATE/DELETE` em
+  `investment_movements`, `SECURITY INVOKER`): `aporte` e `rendimento`
+  somam em `current_amount`; `resgate` subtrai. **Só `aporte` soma em
+  `applied_amount`** — resgate e rendimento não o alteram (`applied_amount`
+  é o total historicamente aportado, nunca diminui). `UPDATE` reprocessa o
+  delta completo (reverte o efeito antigo, aplica o novo) — editar tipo ou
+  valor de uma movimentação é seguro e implementado na UI.
+- **`amount` é sempre uma magnitude positiva** — diferente de
+  `goal_contributions` (retirada = valor negativo), aqui o sinal do efeito
+  vem de `type` (`aporte`/`resgate`/`rendimento`), sem CHECK constraint
+  que force isso (confiança no `type`, não no sinal do valor).
+- **Sem `deleted_at` nem coluna de status** em `investments` — diferente
+  de Contas/Categorias/Transações/Recorrências, não há soft delete
+  possível neste schema. Exclusão é sempre física (segura:
+  `investment_movements.investment_id` é `ON DELETE CASCADE`, nenhuma
+  outra tabela referencia `investments`).
+- **Sem colunas `color`/`icon`** — diferente de Contas/Cartões/Metas/
+  Centros de Custo. A UI deriva aparência de `type` via mapa fixo no
+  frontend, não personalizável por linha.
+- **`v_net_worth.total_investments`** soma `current_amount` de todos os
+  investimentos do usuário sem filtro — alimenta diretamente o patrimônio
+  líquido do dashboard.
+- **Achado de segurança avaliado, sem migration:**
+  `investment_movements.investment_id` não tem trigger de validação de
+  ownership (mesma ausência de `goal_contributions.goal_id`, Parte 2 do
+  `MODULO_4.md`). Testado: usuário B inserindo uma
+  `investment_movements` com `investment_id` de A é aceito, mas como
+  `apply_investment_movement` é `SECURITY INVOKER`, a `UPDATE` que faz em
+  `investments` é bloqueada pela RLS (0 linhas, meta de A intacta).
+  Confirmado empiricamente, sem migration criada — mesma decisão de
+  Metas.
 
 ## 25. Metas
 
