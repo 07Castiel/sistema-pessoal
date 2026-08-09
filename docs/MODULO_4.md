@@ -1,4 +1,4 @@
-# Fase 4 — Cartões, Faturas, Metas, Investimentos, Empréstimos e Financiamentos
+# Fase 4 — Cartões, Faturas, Metas, Investimentos, Empréstimos, Financiamentos e Orçamentos
 
 > **Parte 1 (seções 1-9): Cartões e Faturas.** Backend (`credit_cards`,
 > `card_invoices`, `v_card_usage`, trigger `recalc_invoice_total`) já
@@ -30,6 +30,15 @@
 > formulário único. **Nenhuma migration.** Um bug real de UX (percentual
 > "pago" negativo) foi encontrado testando no navegador e corrigido antes
 > do commit (seção 27).
+>
+> **Parte 5 (seções 30-36): Orçamentos.** Backend (`budgets`, trigger
+> `check_budget_alerts`) já existia desde a Fase 1, sem UI. Módulo mais
+> simples de integrar com dado já existente: "realizado" nunca é
+> armazenado, é sempre derivado de `v_category_summary` — a mesma view já
+> usada no Dashboard, reaproveitada em vez de duplicar o cálculo.
+> **Nenhuma migration** — mesma classe de achado de ownership de
+> Metas/Investimentos/Empréstimos foi investigada e confirmada sem
+> impacto real (seção 33).
 
 ---
 
@@ -762,3 +771,204 @@ de teste removidos, contagem zero confirmada em `loans`,
   avaliada e não corrigida (seção 28) — decisão registrada.
 - Sem anexos (comprovantes de pagamento) — não solicitado.
 - Sem restaurar exclusão — schema não tem soft delete nessas tabelas.
+
+---
+
+# Parte 5 — Orçamentos
+
+Quinto e último módulo da Fase 4. Backend (`budgets`, trigger
+`check_budget_alerts`) já existia desde a Fase 1, sem UI. Módulo mais
+simples dos cinco: tabela única, sem tabela filha, sem período/fatura
+para resolver, sem transação de liquidação — só `budgets` e a leitura
+(nunca escrita) de `transactions`/`v_category_summary`.
+
+## 30. Modelo confirmado lendo o schema e a trigger antes de implementar
+
+`budgets` — `user_id`, `category_id` (FK `ON DELETE CASCADE`, diferente
+do padrão `SET NULL` de outras tabelas), `month`/`year` (`smallint`,
+CHECK `month between 1 and 12`), `planned_amount`, 4 flags booleanas
+(`alert_50_sent`, `alert_75_sent`, `alert_90_sent`, `alert_100_sent`),
+`UNIQUE(user_id, category_id, month, year)`. **Sem coluna de "valor
+realizado"** — o gasto real nunca é armazenado.
+
+`check_budget_alerts` (`AFTER INSERT/UPDATE` em `transactions`,
+`SECURITY INVOKER`), lida via `pg_get_functiondef` antes de implementar:
+só reage quando `type='despesa' AND status='pago' AND category_id IS NOT
+NULL`; computa `spent` somando `transactions.amount` com o mesmo filtro
+mais mês/ano de `date`; se `spent/planned_amount` cruzar 50/75/90/100% e
+a flag correspondente ainda não foi enviada, insere em `notifications`
+(`type='orcamento_estourado'`) e marca a flag — **em cascata**: atingir
+100% marca as 4 flags de uma vez (a cadeia `elsif` testa da maior
+porcentagem para a menor, então um salto direto de 0% para 110% dispara
+só a notificação de 100%, mas grava as 4 flags). **Nunca reseta as
+flags** — mesmo padrão monotônico de `check_goal_completion`. **Não
+reage a `DELETE`** de transação nem a `UPDATE` de
+`budgets.planned_amount`.
+
+## 31. "Realizado" — decisão de reaproveitar a fonte do Dashboard, não duplicar o cálculo
+
+O requisito do usuário para este módulo foi explícito: "todo número
+apresentado deve possuir uma fonte de verdade clara" e evitar cálculos
+divergentes de outras telas. Em vez de fazer o frontend somar
+`transactions` diretamente (duplicando a lógica que a trigger já usa),
+`budgets.repository.ts` (`getSpentByCategory`) consulta
+`v_category_summary` — a mesma view já consumida pelo Dashboard
+(`dashboardRepository.getCategorySummary`) — filtrada por
+`category_type='despesa'` no período.
+
+**Equivalência confirmada, não presumida:** `v_category_summary` filtra
+`status IN ('pago','recebido')`, sem filtrar `transactions.type`
+diretamente — mas `validate_transaction_references` (lida antes de
+assumir) garante que uma categoria `despesa` só pode ser referenciada
+por uma transação `type='despesa'` (bloqueia com exceção o caso
+contrário). Logo, para `category_type='despesa'`, o filtro da view é
+equivalente a `type='despesa' AND status='pago'` — exatamente o que
+`check_budget_alerts` usa. **Confirmado empiricamente** (seção 33): o
+valor de `v_category_summary.total_amount` bateu exatamente com o
+`spent` interno da trigger em todos os cenários testados.
+
+Uma query só por período retorna o "realizado" de todas as categorias
+(`Map<category_id, number>`), sem N+1 — mesmo cuidado já tomado em
+`countUsageBatch` de Tags/Centros de Custo.
+
+## 32. Categoria, nome e ícone resolvidos no frontend — sem embed de banco novo
+
+Nenhum outro repository deste projeto usa `select("*, relacao(...)")`
+(embed do PostgREST) — o padrão estabelecido em todos os módulos da Fase
+4 é resolver relações a partir de listas já buscadas no frontend (ex.:
+Metas nunca precisou disso porque não exibe categoria; aqui exibir é
+essencial). `useBudgetsQuery` combina `budgets` (por período) +
+`useCategoriesQuery()` (já em cache compartilhado no app) + o mapa de
+"realizado" num único `useMemo`, sem introduzir uma query de banco nova
+nem uma abstração de join. Percentual, saldo restante e faixa de saúde
+(`ok`/`warning`/`danger`, limiares 50/90%, alinhados aos limiares da
+trigger) são sempre derivados nesse hook, nunca armazenados em estado.
+
+## 33. Sem migration — mesma classe de achado de Metas/Investimentos/Empréstimos
+
+Investigado e testado antes de decidir: `budgets.category_id` não tem
+trigger de validação de ownership análoga a
+`validate_transaction_references`. Diferente das outras 4 lacunas da
+Fase 4 (que eram em tabelas *filhas* com trigger de recálculo
+`SECURITY INVOKER` protegendo a tabela pai), aqui `budgets` é a própria
+tabela — não há tabela pai a proteger, mas o raciocínio de contenção é o
+mesmo por outro caminho.
+
+**Testado com dois usuários descartáveis:** B insere um `budgets`
+referenciando uma `category_id` de A (RLS de `INSERT` só valida
+`user_id = auth.uid()`, não a origem de `category_id`) — **aceito**.
+Mas o dano é nulo: a linha pertence a B (`budgets.user_id = B`), a RLS
+de `SELECT/UPDATE/DELETE` de `budgets` impede A ou qualquer outro de
+vê-la, e `check_budget_alerts` só casa um orçamento com uma transação
+quando `user_id` de ambos coincide — a linha fantasma de B nunca é
+acionada por uma transação real de A. **Confirmado empiricamente:** após
+o ataque, o orçamento real de A (`planned_amount`) permaneceu
+inalterado, e SELECT/UPDATE/DELETE de B sobre o orçamento de A
+retornaram 0 linhas em todos os casos. **Decisão:** não criar migration
+— mesmo raciocínio de Metas/Investimentos/Empréstimos (seções 11, 18,
+28): a lacuna existe, mas não permite corromper nem visualizar dado de
+outro usuário.
+
+## 34. `useInvalidateTransactions` — mudança de uma linha, testada
+
+Requisito explícito do usuário: "não deixe o orçamento mostrando valores
+desatualizados após uma transação". `useInvalidateTransactions()` em
+`src/hooks/use-transactions.ts` passou a incluir
+`queryClient.invalidateQueries({ queryKey: ["budgets"] })`, junto das
+invalidações já existentes (`accounts`, `dashboard`,
+`recurring-rules`). **Testado ao vivo, dentro da SPA (sem reload):**
+criar uma despesa em Transações e navegar para Planejamento via link do
+menu (não `navigate` de URL, que forçaria remount) mostrou o "realizado"
+e o percentual atualizados imediatamente, sem F5 — confirma que a
+invalidação está de fato conectada, não só presente no código.
+
+## 35. Testes financeiros (banco de produção, usuário descartável, role `authenticated`)
+
+Metodologia idêntica às sessões anteriores — usuário criado via
+`auth.users`, operações como role `authenticated` via `set_config
+('request.jwt.claims', ...)`, dados removidos ao final (contagem zero
+confirmada).
+
+| Cenário | Esperado | Obtido | Resultado |
+|---|---|---|---|
+| Criar orçamento (planejado 1000) | 4 flags `false` | `false`/`false`/`false`/`false` | ✅ |
+| Despesa paga de 500 (50%) | `alert_50_sent=true`, notificação "Metade do orçamento utilizada" | ✅ | ✅ |
+| + Despesa paga de 500 (100%) | 4 flags `true` (cascata), 2ª notificação "Orçamento estourado" | `alert_50/75/90/100_sent=true`, 2 notificações no total | ✅ (confirma cascata e que 75/90 não geram notificação própria quando saltadas) |
+| `v_category_summary` no período | `500,00` (só 1ª despesa, spent real do trigger) | `500,00` | ✅ (confirma equivalência da fonte usada pelo frontend) |
+| Editar `planned_amount` (1000→2000) | Flags não resetam | `alert_50/100_sent` continuam `true` | ✅ (confirma monotonicidade) |
+| Excluir a 2ª despesa (500) | "Realizado" volta a 500 (`v_category_summary` sempre ao vivo); flags não resetam | `500,00`; flags continuam `true` | ✅ (confirma que "realizado" nunca fica desatualizado, mas alertas não reagem a `DELETE`, como já documentado na trigger) |
+| Excluir o orçamento | `DELETE` bem-sucedido, 0 linhas restantes | ✅ | ✅ |
+
+Repetido depois via UI real (navegador, usuário descartável): criar
+orçamento de R$500 em "Alimentação" → despesa de R$250 paga → card mostra
+50%, faixa "Atenção" (amarelo) → despesa adicional de R$300 (sem reload,
+via SPA) → card atualiza para 110%, faixa "Estourado" (vermelho), KPI
+"Orçamentos estourados: 1" → editar para R$600 planejado → recalcula
+para 92% ao vivo → excluir → volta ao estado vazio.
+
+## 36. Testes de segurança / RLS multiusuário
+
+Dois usuários descartáveis (A e B), operações como role `authenticated`:
+
+- B: `SELECT`/`UPDATE`/`DELETE` do orçamento de A = 0 linhas em todos os
+  casos; `planned_amount` de A confirmado intacto (`1500,00`) depois das
+  tentativas de `UPDATE`/`DELETE`.
+- B: `INSERT` de `budgets` com `category_id` de A = aceito (achado da
+  seção 33), mas a linha pertence a B e não afeta A — ver seção 33 para
+  a análise completa.
+
+## Arquivos criados/alterados (Orçamentos)
+
+**Novos:**
+```
+src/schemas/budget.schema.ts                       budgetSchema + MONTH_OPTIONS
+src/repositories/budgets.repository.ts              listByPeriod, getSpentByCategory (v_category_summary), CRUD
+src/services/budgets.service.ts                     passthrough
+src/hooks/use-budgets.ts                             useBudgetsQuery (combina budgets+categorias+realizado), mutações
+src/components/budgets/budget-form-dialog.tsx
+src/components/budgets/budget-card.tsx               progresso planejado×realizado, faixas de cor
+```
+
+**Modificados:**
+```
+src/pages/planning/planning.tsx        ComingSoon → página completa
+src/hooks/use-transactions.ts          + invalidação de ["budgets"] em useInvalidateTransactions
+src/lib/errors.ts                      + mensagem amigável para budgets_user_id_category_id_month_year_key
+docs/MODULO_4.md                       esta seção (Parte 5)
+docs/BANCO_DE_DADOS.md                 seção 27 reescrita (Backend → UI completa)
+docs/REGRAS_DE_NEGOCIO.md              seção 17 reescrita ([Backend] → [UI])
+docs/CONTEXTO_PROJETO.md               histórico atualizado
+```
+
+Nenhum arquivo de módulos anteriores da Fase 4 foi tocado, exceto a
+extensão aditiva de `use-transactions.ts` (uma linha) e `errors.ts` (uma
+entrada de mapa).
+
+## Validação técnica
+
+TypeScript (`tsc -b --noEmit`): 0 erros. ESLint: 0 erros, 4 warnings
+pré-existentes (mesmos de sempre, `react-refresh/only-export-components`
+em `shadcn/ui`). Build de produção: sucesso (~32s, bundle 1,57 MB / 431
+KB gzip). Todos os usuários e dados de teste (SQL e navegador) removidos,
+contagem zero confirmada em `budgets`; dados reais do usuário (2 contas
+de auth pré-existentes) permaneceram intactos.
+
+## Pendências não bloqueantes (Orçamentos)
+
+- **Sino de notificações não invalida em tempo real** após uma mutação
+  de transação — `useNotifications` (`["notifications", userId]`) só é
+  invalidado por `markAsRead`/`markAllAsRead` e por um polling de 60s do
+  contador de não lidas; a notificação de `check_budget_alerts` é
+  gravada corretamente no banco (confirmado via SQL), mas só aparece na
+  lista do sino após esse polling ou um remount. **Lacuna pré-existente
+  da infraestrutura de notificações**, não introduzida por este módulo e
+  compartilhada por todos os outros tipos de notificação (cartão,
+  conta, meta) — fora do escopo desta sessão corrigir, pois exigiria
+  alterar um hook compartilhado por todo o app. O requisito de "não
+  ficar desatualizado" do próprio módulo de Orçamento está satisfeito
+  pelo card (percentual/faixa de cor sempre ao vivo, não depende do
+  sino).
+- Sem edição em lote nem "duplicar orçamentos do mês anterior" — não
+  solicitado, não implementado.
+- Lacuna de ownership de `budgets.category_id` avaliada e não corrigida
+  (seção 33) — decisão registrada, mesma classe dos achados anteriores.

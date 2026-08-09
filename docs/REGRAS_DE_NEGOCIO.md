@@ -326,12 +326,43 @@ validação de ownership via trigger (diferente de `transactions.card_id`/
 cruzada dentro da própria trigger) — decisão deliberada de não criar
 migration para uma lacuna sem impacto comprovado.
 
-## 17. Orçamentos — **[Backend]**
+## 17. Orçamentos — **[UI]** (implementado na Fase 4)
 
-Tabela `budgets` (planejado por categoria/mês/ano, 4 flags de alerta em
-50/75/90/100%), trigger `check_budget_alerts` — smoke-testado (100% do
-orçamento → notificação + flag). View `v_cash_flow_daily` pronta, sem
-consumidor no frontend ainda. **Rota `/planejamento` é `ComingSoon`.**
+CRUD de orçamento (`/planejamento`): categoria (restrito a categorias de
+despesa ativas — decisão de UI, o banco não restringe o tipo por FK),
+mês, ano, valor planejado. `UNIQUE(user_id, category_id, month, year)` —
+duplicidade bloqueada com mensagem amigável.
+
+**"Realizado" nunca é escrito pelo frontend** — é sempre recalculado a
+partir de `v_category_summary` (mesma view/fonte de verdade usada no
+Dashboard), filtrada por `category_type='despesa'` no período. Isso é
+equivalente ao filtro que `check_budget_alerts` usa
+(`type='despesa' AND status='pago'`), porque uma categoria de despesa só
+pode ser usada em transações `type='despesa'`
+(`validate_transaction_references`). **Percentual utilizado, saldo
+restante e status (sob controle/atenção/estourado)** são sempre
+derivados na renderização a partir de planejado × realizado — nunca
+armazenados.
+
+**Alertas:** faixas visuais no próprio card (verde <50%, amarelo
+50–90%, vermelho ≥90%) refletem o "realizado" ao vivo. Além disso, a
+trigger `check_budget_alerts` insere uma notificação real em
+`notifications` (consumida pelo sino global) ao cruzar 50/75/90/100% —
+**monotônico, nunca reseta**: excluir a transação que gerou o alerta ou
+aumentar `planned_amount` depois não desmarca as flags já enviadas
+(mesmo comportamento de `check_goal_completion`). Ao atingir 100% de uma
+vez, as 4 flags são marcadas em cascata (confirmado em teste real).
+
+**Sem "valor realizado" nem status ativo/inativo no schema** — não há
+"desativar" um orçamento, só editar ou excluir.
+
+**Exclusão:** física (sem `deleted_at` nesta tabela).
+
+**[Requer confirmação — achado revisado, não corrigido, ver
+`docs/BANCO_DE_DADOS.md` seção 27]:** `budgets.category_id` não tem
+validação de ownership via trigger. Testado e confirmado que isso não
+permite corromper nem visualizar dado de outro usuário — mesma classe de
+achado de Metas/Investimentos/Empréstimos, RLS contém o dano.
 
 ## 18. Empréstimos — **[UI]** (implementado na Fase 4)
 
@@ -428,7 +459,7 @@ liste todos os eventos do sistema.
 
 | Status | Domínios |
 |---|---|
-| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4), Investimentos (Fase 4), Empréstimos (Fase 4), Financiamentos (Fase 4) |
-| **[UI] parcial** | Anexos (só Contas + Transações), Notificações (só o sino, sem central) |
-| **[Backend] pronto, sem UI** | Transferências, Orçamentos |
-| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), unidade de `financings.interest_rate` (percentual vs. fração), alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id`/`investment_movements.investment_id`/`loan_installments.loan_id`/`financing_installments.financing_id` (todas revisadas, sem impacto comprovado — ver `MODULO_4.md`) |
+| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4), Investimentos (Fase 4), Empréstimos (Fase 4), Financiamentos (Fase 4), Orçamentos (Fase 4) |
+| **[UI] parcial** | Anexos (só Contas + Transações), Notificações (só o sino, sem central; sino não invalida em tempo real após mutações — lacuna pré-existente, não introduzida pelo módulo de Orçamentos) |
+| **[Backend] pronto, sem UI** | Transferências |
+| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), unidade de `financings.interest_rate` (percentual vs. fração), alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id`/`investment_movements.investment_id`/`loan_installments.loan_id`/`financing_installments.financing_id`/`budgets.category_id` (todas revisadas, sem impacto comprovado — ver `MODULO_4.md`) |

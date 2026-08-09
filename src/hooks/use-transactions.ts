@@ -21,6 +21,7 @@ function useInvalidateTransactions() {
     queryClient.invalidateQueries({ queryKey: ["accounts"] })
     queryClient.invalidateQueries({ queryKey: ["dashboard"] })
     queryClient.invalidateQueries({ queryKey: ["recurring-rules"] })
+    queryClient.invalidateQueries({ queryKey: ["budgets"] })
   }
 }
 

@@ -5,23 +5,25 @@
 > no banco de produção (`execute_sql`) e no repositório local no momento da
 > escrita — não são recordados de memória.
 >
-> **Última atualização:** 2026-08-09, sessão que documentou a arquitetura/
-> banco/regras complementares e implementou o primeiro módulo da Fase 4
-> (Cartões e Faturas). Ver seção 33 e `docs/MODULO_4.md`.
+> **Última atualização:** 2026-08-09, sessão que implementou o quinto e
+> último módulo da Fase 4 (Orçamentos). Ver seção 34 e `docs/MODULO_4.md`
+> Parte 5. Seções 33 documentam os módulos anteriores da Fase 4 (Cartões,
+> Metas, Investimentos, Empréstimos/Financiamentos).
 
 ---
 
 ## 1. Estado atual em uma frase
 
 **FASE 3 CONCLUÍDA e commitada** (`58936f2`, `216e2b4`, `e629d8e`, enviados
-para `origin/develop`). **FASE 4 iniciada:** Cartões e Faturas implementados
-e testados (ver seção 33). Contas (Fase 1), Categorias (Fase 2),
+para `origin/develop`). **FASE 4 CONCLUÍDA:** Cartões/Faturas, Metas,
+Investimentos, Empréstimos/Financiamentos e Orçamentos implementados e
+testados (ver seções 33-34). Contas (Fase 1), Categorias (Fase 2),
 Receitas/Despesas (Fase 3, incluindo recorrências, anexos, tags, centros de
-custo e dashboard com dados reais) e agora Cartões/Faturas (Fase 4) estão
+custo e dashboard com dados reais) e todos os módulos da Fase 4 estão
 implementados, testados (funcional, financeiro, segurança multiusuário,
 dark mode, responsividade) e com 0 erros de TypeScript/ESLint e build
-funcionando. Ver seção 32 para o detalhamento da finalização da Fase 3 e
-seção 33 para Cartões/Faturas.
+funcionando. Restam Calendário, Relatórios e Configurações (Fase 4,
+ver `docs/HANDOFF_CONTINUIDADE.md`).
 
 ---
 
@@ -1094,3 +1096,42 @@ desde a Fase 1. Detalhamento completo em `docs/MODULO_4.md`, Parte 4
   trigger de validação) testada e confirmada sem impacto real.
 - TypeScript/ESLint/build: 0 erros. Dados de teste removidos, contagem
   zero confirmada.
+
+## 34. Fase 4 — Orçamentos (2026-08-09, sessão seguinte ao handoff)
+
+**Quinto e último módulo da Fase 4: Orçamentos.** Backend (`budgets`,
+trigger `check_budget_alerts`) já existia desde a Fase 1. Detalhamento
+completo em `docs/MODULO_4.md`, Parte 5 (seções 30-36). Resumo:
+
+- **"Realizado" nunca é armazenado** — sempre derivado de
+  `v_category_summary`, a mesma view/fonte já usada no Dashboard, em vez
+  de o frontend duplicar a soma de `transactions`. Confirmado
+  (lendo `validate_transaction_references`) que o filtro da view é
+  equivalente ao usado pela trigger (`type='despesa' AND status='pago'`).
+- **`check_budget_alerts` smoke-testada com valores reais**: salto de
+  0%→50%→110% num mesmo orçamento confirmou a cascata de flags (100%
+  marca as 4 de uma vez), a monotonicidade (editar `planned_amount` ou
+  excluir a transação que gerou o alerta não reseta as flags) e que o
+  "realizado" exibido na UI sempre reflete o estado atual das
+  transações (nunca fica desatualizado), mesmo quando as flags ficam
+  "presas" no valor mais alto já atingido.
+- **`useInvalidateTransactions` passou a invalidar `["budgets"]`**
+  (requisito explícito do usuário) — testado ao vivo dentro da SPA
+  (sem reload de página): criar uma despesa em Transações e navegar
+  para Planejamento por link do menu atualizou o card imediatamente.
+- **Nenhuma migration** — mesma classe de achado de ownership de
+  Metas/Investimentos/Empréstimos: `budgets.category_id` sem trigger de
+  validação, testado com dois usuários descartáveis e confirmado sem
+  impacto real (a linha "fantasma" pertence ao próprio atacante e nunca
+  é acionada por uma transação de outro usuário).
+- TypeScript/ESLint/build: 0 erros. Testado no navegador (criar, editar,
+  excluir, mobile 375px sem overflow, dark mode com cores corretas via
+  tokens já existentes). Dados de teste (SQL e navegador) removidos,
+  contagem zero confirmada.
+- **Pendência não bloqueante identificada (pré-existente, fora do
+  escopo deste módulo):** o sino de notificações (`useNotifications`)
+  não invalida em tempo real após mutações de transação — só atualiza
+  por polling de 60s do contador ou remount. A notificação de orçamento
+  é gravada corretamente no banco; só demora a aparecer no sino. Afeta
+  igualmente notificações de outros módulos (cartão, meta), não é
+  regressão desta sessão.

@@ -74,7 +74,7 @@ Lista completa com colunas exatas, extraída de
 | `financing_installments` | `id, user_id, financing_id, number, amount, amortization_amount, interest_amount, paid_amount, remaining_balance, due_date, paid_date, status, created_at` | Schema pronto, sem UI |
 | `goals` | `id, user_id, name, category_id, target_amount, current_amount, target_date, priority, status, color, icon, created_at, updated_at` | Schema pronto, sem UI (`/metas` é `ComingSoon`) |
 | `goal_contributions` | `id, user_id, goal_id, amount, date, notes, created_at` | Schema pronto, sem UI |
-| `budgets` | `id, user_id, category_id, year, month, planned_amount, alert_50_sent, alert_75_sent, alert_90_sent, alert_100_sent, created_at, updated_at` | Schema pronto, sem UI (`/planejamento` é `ComingSoon`) |
+| `budgets` | `id, user_id, category_id, year, month, planned_amount, alert_50_sent, alert_75_sent, alert_90_sent, alert_100_sent, created_at, updated_at` | UI completa (`/planejamento`), Fase 4 — ver seção 27 |
 | `notifications` | `id, user_id, type, title, message, related_table, related_id, read, created_at` | Schema pronto; consumido por `useNotifications`/`NotificationsBell` no layout, mas sem central de notificações dedicada |
 | `audit_logs` | `id, user_id, table_name, record_id, action, old_data, new_data, ip_address, user_agent, created_at` | Auditoria genérica, alimentada por `audit_trigger_fn` + eventos manuais de auth (login/logout) |
 
@@ -544,11 +544,47 @@ price` e `financing_installments` guarda `amortization_amount`/
 
 ## 27. Orçamentos
 
-Tabela `budgets` (planejado por categoria/mês/ano, 4 flags de alerta em
-50/75/90/100%), trigger `check_budget_alerts` já ativo e smoke-testado
-(100% do orçamento → notificação + flag). View `v_cash_flow_daily`
-pronta para o futuro módulo de fluxo de caixa. **Sem UI** — rota
-`/planejamento` é `ComingSoon`.
+Tabela `budgets` (planejado por categoria/mês/ano, `UNIQUE(user_id,
+category_id, month, year)`, `category_id` FK `ON DELETE CASCADE`, 4
+flags de alerta em 50/75/90/100%). **Implementado (UI completa)** na
+Fase 4 — rota `/planejamento`. Nenhuma tabela referencia `budgets`
+(tabela folha).
+
+- **"Realizado" nunca é armazenado** — sempre recalculado. O frontend
+  usa `v_category_summary` (mesma view do Dashboard) filtrada por
+  `category_type = 'despesa'`, que é equivalente ao filtro usado pela
+  trigger (`type='despesa' AND status='pago'`), porque
+  `validate_transaction_references` já garante que uma categoria de
+  despesa só é usada em transações `type='despesa'`. Uma query só por
+  período, sem N+1.
+- **`check_budget_alerts`** (`AFTER INSERT/UPDATE` em `transactions`,
+  `SECURITY INVOKER`) — só reage a `type='despesa' AND status='pago' AND
+  category_id IS NOT NULL`; busca o orçamento do mês/ano/categoria da
+  transação e compara `spent/planned_amount` com 50/75/90/100%,
+  inserindo em `notifications` (`type='orcamento_estourado'`) e marcando
+  a(s) flag(s) — **em cascata** (atingir 100% de uma vez marca as 4
+  flags). **Monotônico, nunca reseta**: confirmado testando que
+  excluir a transação que gerou o alerta ou aumentar
+  `planned_amount` depois não desmarca as flags — mesmo padrão de
+  `check_goal_completion`. **Não reage a `DELETE`** de transação.
+  Smoke-testado nesta sessão com valores reais (50% → 100% em um único
+  salto, cascata de flags e notificação confirmadas).
+- **Achado de segurança avaliado, sem migration:** `budgets.category_id`
+  não tem trigger de ownership análoga a
+  `validate_transaction_references` — testado empiricamente (dois
+  usuários descartáveis): usuário B consegue inserir um `budgets`
+  referenciando uma categoria de A. Sem impacto real: a linha pertence a
+  B (`user_id=B`), RLS de `budgets` impede B de ver/alterar orçamentos de
+  A, e `check_budget_alerts` casa `user_id` da transação com `user_id`
+  do orçamento — a linha fantasma de B nunca é acionada por uma
+  transação real de A (que só pode ser criada por A, e
+  `validate_transaction_references` impede A de referenciar uma
+  categoria que não seja dele, o que é irrelevante aqui pois a
+  categoria É do próprio A). Mesma classe de achado de Metas/
+  Investimentos/Empréstimos (seções 24-26) — RLS na trigger `SECURITY
+  INVOKER` contém o dano.
+- View `v_cash_flow_daily` (não usada por Orçamentos) segue pronta para
+  o futuro módulo de Relatórios/fluxo de caixa.
 
 ## 28. Tags
 
