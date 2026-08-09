@@ -237,12 +237,45 @@ rendimento como receita com a mesma categoria — os dois modelos (tabela
 dedicada vs. transação categorizada) coexistem no schema; qual a UI
 futura vai usar como fonte de verdade é **[Requer confirmação]**.
 
-## 16. Metas — **[Backend]**
+## 16. Metas — **[UI]** (implementado na Fase 4)
 
-Tabelas `goals` (com `priority`, `status`: `em_andamento`, `concluida`,
-`cancelada`), `goal_contributions`, triggers `recalc_goal_amount` +
-`check_goal_completion` — smoke-testados (contribuição 100 → meta
-concluída). **Rota `/metas` é `ComingSoon`.**
+CRUD de metas (`/metas`): nome, valor-alvo, prazo (opcional), prioridade
+(`baixa`/`media`/`alta`), categoria associada (opcional, só informativa —
+não filtra nem soma transações automaticamente), cor, ícone.
+
+**`current_amount` nunca é escrito pelo frontend** — é 100% derivado por
+`recalc_goal_amount` a partir da soma de `goal_contributions.amount`.
+
+**Aporte/retirada:** ação "Novo aporte ou retirada" no detalhe da meta.
+Aporte grava `amount` positivo, retirada grava `amount` negativo (não há
+coluna de tipo no banco — a distinção "aporte"/"retirada" existe só no
+formulário do frontend). Excluir uma movimentação recalcula
+`current_amount` automaticamente (trigger `AFTER DELETE`).
+
+**Conclusão automática:** quando `current_amount >= target_amount`, o
+banco avança `status` de `em_andamento` para `concluida` sozinho (trigger
+`check_goal_completion`) — **não existe ação manual "concluir meta"** na
+UI, é sempre consequência de aportes reais. **Importante:** esse avanço
+**nunca reverte** — uma retirada que derrube `current_amount` abaixo do
+alvo não volta o status para `em_andamento` automaticamente (comportamento
+do banco, confirmado em teste real, preservado sem alteração).
+
+**Cancelar/reabrir:** ação explícita do usuário (`status → cancelada` /
+`status → em_andamento`), independente da conclusão automática. Meta
+cancelada não permite novos aportes/retiradas pela UI (mas o histórico
+existente é preservado).
+
+**Exclusão:** física (sem `deleted_at` nesta tabela) — remove também todo
+o histórico de contribuições (`ON DELETE CASCADE`), com aviso explícito
+no diálogo de confirmação.
+
+**[Requer confirmação — achado revisado, não corrigido, ver
+`docs/MODULO_4.md` seção 11]:** `goal_contributions.goal_id` não tem
+validação de ownership via trigger (diferente de `transactions.card_id`/
+`invoice_id`). Testado e confirmado que isso **não permite corromper**
+`current_amount` de outro usuário (RLS de `goals` bloqueia a atualização
+cruzada dentro da própria trigger) — decisão deliberada de não criar
+migration para uma lacuna sem impacto comprovado.
 
 ## 17. Orçamentos — **[Backend]**
 
@@ -299,7 +332,7 @@ liste todos os eventos do sistema.
 
 | Status | Domínios |
 |---|---|
-| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4) |
+| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4), Metas (Fase 4) |
 | **[UI] parcial** | Anexos (só Contas + Transações), Notificações (só o sino, sem central) |
-| **[Backend] pronto, sem UI** | Transferências, Investimentos, Metas, Orçamentos, Empréstimos, Financiamentos |
-| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), se Empréstimos e Financiamentos serão uma tela ou duas, alcance real de notificações automáticas em uso |
+| **[Backend] pronto, sem UI** | Transferências, Investimentos, Orçamentos, Empréstimos, Financiamentos |
+| **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), se Empréstimos e Financiamentos serão uma tela ou duas, alcance real de notificações automáticas em uso, lacuna de ownership de `goal_contributions.goal_id` (revisada, sem impacto comprovado — ver `MODULO_4.md` seção 11) |

@@ -1,13 +1,17 @@
-# Fase 4 — Cartões e Faturas
+# Fase 4 — Cartões, Faturas e Metas
 
-> Primeiro módulo da Fase 4. Backend (`credit_cards`, `card_invoices`,
-> `v_card_usage`, trigger `recalc_invoice_total`) já existia desde a Fase 1,
-> sem UI. Esta sessão implementou a UI completa e a integração com
+> **Parte 1 (seções 1-9): Cartões e Faturas.** Backend (`credit_cards`,
+> `card_invoices`, `v_card_usage`, trigger `recalc_invoice_total`) já
+> existia desde a Fase 1, sem UI. Implementada UI completa e integração com
 > Transações, reaproveitando 100% da arquitetura em camadas já estabelecida
-> (`repository → service → hook → component/page`). Nenhuma migration
-> alterou tabela, coluna ou lógica financeira crítica — a única mudança de
-> banco foi um hardening de segurança pontual (seção "Migration aplicada"
-> abaixo).
+> (`repository → service → hook → component/page`). Única mudança de banco:
+> hardening de segurança pontual (migration `0036`).
+>
+> **Parte 2 (seções 10-15): Metas.** Backend (`goals`, `goal_contributions`,
+> triggers `recalc_goal_amount`/`check_goal_completion`) também já existia
+> desde a Fase 1, sem UI. Implementada UI completa. **Nenhuma migration** —
+> módulo inteiramente aditivo sobre o schema existente, sem lacuna de
+> segurança que exigisse correção (ver seção 13).
 
 ---
 
@@ -254,3 +258,161 @@ Dois usuários descartáveis (A e B), operações como role `authenticated`:
   uma automação real exigiria um job agendado (fora do escopo desta
   sessão, mesmo espírito de `generate_due_recurrences` ser chamada sob
   demanda em vez de por `pg_cron`).
+
+---
+
+# Parte 2 — Metas
+
+Segundo módulo implementado na Fase 4. Backend (`goals`,
+`goal_contributions`, triggers `recalc_goal_amount`/`check_goal_completion`)
+já existia desde a Fase 1. Módulo mais simples que Cartões/Faturas: sem
+relação com contas ou saldo, sem período/fatura para resolver, sem
+transação de liquidação — é puramente `goals`/`goal_contributions`.
+
+## 10. Decisões de modelo confirmadas lendo o código-fonte das triggers
+
+Antes de implementar, as duas functions foram lidas via
+`pg_get_functiondef` (não documentado anteriormente em nenhum lugar):
+
+- **`recalc_goal_amount`** (trigger `AFTER INSERT/UPDATE/DELETE` em
+  `goal_contributions`): soma `amount` de todas as contribuições da meta e
+  grava em `goals.current_amount`. **Sem CHECK de sinal** — `amount` pode
+  ser negativo. Diferente de `investment_movements` (que tem uma coluna
+  `type` de enum), `goal_contributions` **não tem coluna de tipo** — a
+  única forma de representar "retirada" é gravar `amount` negativo.
+- **`check_goal_completion`** (trigger `BEFORE UPDATE OF current_amount`
+  em `goals`): se `current_amount >= target_amount` e `status =
+  'em_andamento'`, avança para `'concluida'`. **Só avança, nunca reverte**
+  — se depois uma retirada derrubar `current_amount` abaixo de
+  `target_amount`, o status permanece `'concluida'`. Comportamento
+  confirmado empiricamente no teste financeiro (seção 12): retirada de
+  R$ 200 de uma meta concluída de R$ 1.000 deixou `current_amount = 800`
+  mas `status` continuou `'concluida'`.
+
+**Consequências de implementação, ambas derivadas diretamente do
+comportamento acima (não inventadas):**
+- `goalContributionSchema` tem um campo `kind: "aporte" | "retirada"` só
+  no frontend; o repository converte para `amount` positivo/negativo antes
+  de gravar (`goal-contributions.repository.ts`, `create`).
+- `goals.repository.ts` nunca escreve `current_amount` diretamente — nem
+  em `create` (nasce com o default `0` do banco) nem em `update` (só
+  nome/valor-alvo/prazo/prioridade/categoria/cor/ícone).
+- A UI não tem um botão "marcar meta como concluída" manual — só a
+  trigger completa uma meta, com base em contribuições reais. Reabrir uma
+  meta cancelada volta para `'em_andamento'` (ação explícita do usuário,
+  `setStatus`), mas nada reverte `'concluida'` automaticamente.
+
+## 11. Sem migration — achado de segurança avaliado e não corrigido
+
+Diferente de Cartões (migration `0036`), `goal_contributions.goal_id`
+**não tem** uma trigger de validação de ownership análoga a
+`validate_transaction_references`. Investigado antes de decidir: seria
+possível o usuário B inserir uma `goal_contributions` com `goal_id` da
+meta do usuário A (a policy de INSERT só verifica `user_id = auth.uid()`,
+não a origem de `goal_id`)?
+
+**Testado meticulosamente (seção 12):** sim, o INSERT malicioso é aceito
+(cria uma linha "órfã" pertencente a B, referenciando a meta de A) — mas
+`recalc_goal_amount` roda como `SECURITY INVOKER`, então o `UPDATE
+public.goals ... WHERE id = affected` que ela executa roda com o
+privilégio de B; a RLS de `goals` (`user_id = auth.uid()`) filtra essa
+`UPDATE` para 0 linhas afetadas, porque a meta pertence a A, não a B.
+**Confirmado empiricamente:** `current_amount` da meta de A permaneceu
+exatamente `1000.00` antes e depois do ataque.
+
+**Decisão:** não criar migration para isso. A lacuna é real, mas seu
+impacto está contido pelo RLS de `goals` — não é uma vulnerabilidade de
+corrupção de dado de outro usuário, é uma linha "fantasma" que só o
+próprio atacante consegue ver (via `goal_contributions_select_own`, que
+não vaza nada de A). Diferente do achado de `invoice_id` (migration
+`0036`), aqui o dano real é nulo, não apenas teoricamente baixo — por
+isso não configurou "alteração de banco realmente indispensável" (regra
+do prompt desta sessão). **Registrado aqui como achado revisado, não como
+pendência a corrigir às cegas** — se o padrão do projeto evoluir para
+exigir ownership trigger em toda tabela filha independente de impacto
+comprovado, isso pode ser revisitado.
+
+## 12. Testes financeiros e de segurança (banco de produção, usuários descartáveis)
+
+Mesma metodologia das sessões anteriores — usuários via `auth.users`,
+operações como role `authenticated`, dados removidos ao final (contagem
+zero confirmada).
+
+| Cenário | Esperado | Obtido | Resultado |
+|---|---|---|---|
+| Criar meta (alvo 1000) | `current_amount = 0`, `status = em_andamento` | `0.00` / `em_andamento` | ✅ |
+| Aporte de 400 | `current_amount = 400` | `400.00` | ✅ |
+| + Aporte de 600 (total 1000 = alvo) | `current_amount = 1000`, `status = concluida` (auto) | `1000.00` / `concluida` | ✅ |
+| Retirada de 200 (grava `amount = -200`) | `current_amount = 800`, `status` continua `concluida` | `800.00` / `concluida` | ✅ (confirma que a trigger não reverte) |
+| Excluir a retirada (`DELETE`) | `current_amount` volta a `1000` (recálculo via `AFTER DELETE`) | `1000.00` | ✅ |
+
+**Segurança / RLS multiusuário:**
+- B: `SELECT` da meta de A = 0 linhas.
+- B: `UPDATE`/`DELETE` da meta de A = 0 linhas afetadas; meta de A
+  confirmada intacta depois.
+- B: `INSERT` de `goal_contributions` com `goal_id` da meta de A = aceito
+  (lacuna conhecida, seção 11), mas `current_amount` de A **não foi
+  corrompido** — confirmado antes/depois do ataque (`1000.00` → `1000.00`).
+
+**UI no navegador** (usuário descartável): criar meta → aportar o valor
+total → meta marcada "Concluída" automaticamente, visível no card e no
+sheet de detalhe.
+
+## 13. Bug encontrado e corrigido durante a implementação
+
+| # | Onde | Bug | Correção |
+|---|---|---|---|
+| 1 | `goals.tsx` / `GoalDetailSheet` | O sheet de detalhe recebia uma cópia (`Goal` object) capturada no momento do clique (`useState<Goal \| null>`); após registrar um aporte, a query `["goals"]` era invalidada e a lista recarregava, mas o objeto guardado no estado da página continuava sendo o snapshot antigo — o sheet mostrava `current_amount`/`status` desatualizados até fechar e reabrir. Reproduzido no navegador: aporte do valor total não atualizava o progresso/status no sheet aberto, embora o banco já estivesse correto (confirmado via SQL e reabrindo a página). | `openGoal` deixou de ser um `useState<Goal>` e passou a ser derivado a cada render a partir da lista já buscada (`useState<string \| null>` só para o id + `(goals ?? []).find(g => g.id === openGoalId)`) — mesmo padrão recomendável para qualquer sheet/dialog futuro que exiba dado que muda enquanto está aberto. |
+
+## 14. Arquivos criados/alterados
+
+**Novos:**
+```
+src/schemas/goal.schema.ts                        goalSchema + goalContributionSchema (kind aporte/retirada)
+src/repositories/goals.repository.ts
+src/repositories/goal-contributions.repository.ts
+src/services/goals.service.ts                      passthrough
+src/services/goal-contributions.service.ts          passthrough
+src/hooks/use-goals.ts
+src/hooks/use-goal-contributions.ts
+src/components/goals/goal-form-dialog.tsx
+src/components/goals/goal-card.tsx                  tile com barra de progresso
+src/components/goals/goal-contribution-dialog.tsx    aporte/retirada
+src/components/goals/goal-detail-sheet.tsx           progresso + histórico
+```
+
+**Modificados:**
+```
+src/pages/goals/goals.tsx              ComingSoon → página completa
+src/constants/icon-registry.ts         + GOAL_ICON_OPTIONS
+docs/MODULO_4.md                       esta seção (Parte 2)
+docs/CONTEXTO_PROJETO.md               seção 33 estendida
+docs/BANCO_DE_DADOS.md                 seção 25 (Metas)
+docs/REGRAS_DE_NEGOCIO.md              seção 16 (Metas)
+docs/ARQUITETURA.md                    contagem de ComingSoon (6 restantes)
+```
+
+Nenhum arquivo de Cartões/Faturas ou de fases anteriores foi tocado.
+
+## 15. Validação técnica
+
+- **TypeScript** (`tsc -b --noEmit`): 0 erros (checado antes e depois da
+  correção do bug da seção 13).
+- **ESLint**: 0 erros, 4 warnings pré-existentes (mesmos de sempre).
+- **Build de produção:** sucesso, ~22s, bundle 1,50 MB / 421 KB gzip.
+- **Security Advisor:** idêntico ao anterior — só
+  `auth_leaked_password_protection`, pré-existente.
+- Todos os usuários e dados de teste (SQL e navegador) removidos,
+  contagem zero confirmada.
+
+## Pendências não bloqueantes (Metas)
+
+- Sem anexos (`AttachmentsPanel`) na meta — não solicitado, não
+  implementado; a infraestrutura já suporta se necessário no futuro
+  (bastaria adicionar `"goal"` como uso real de `AttachmentEntityType`,
+  que já existe no union type).
+- Sem vínculo entre `goals.category_id` e transações reais — a categoria
+  da meta é só informativa hoje, não filtra nem soma transações
+  automaticamente.
+- Lacuna de ownership de `goal_contributions.goal_id` avaliada e não
+  corrigida (seção 11) — decisão registrada, não uma omissão.

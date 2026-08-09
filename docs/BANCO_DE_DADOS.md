@@ -425,9 +425,40 @@ aplicado/atual 100). **Sem UI** — rota `/investimentos` é `ComingSoon`.
 
 ## 25. Metas
 
-Tabelas `goals`/`goal_contributions`, triggers `recalc_goal_amount` +
-`check_goal_completion` já ativos e smoke-testados (contribuição 100 →
-meta concluída). **Sem UI** — rota `/metas` é `ComingSoon`.
+Tabelas `goals`/`goal_contributions`. **UI implementada na Fase 4**
+(`docs/MODULO_4.md`, Parte 2) — rota `/metas`.
+
+- **`recalc_goal_amount`** (`AFTER INSERT/UPDATE/DELETE` em
+  `goal_contributions`, `SECURITY INVOKER`): soma `amount` de todas as
+  contribuições da meta em `goals.current_amount`. Sem CHECK de sinal —
+  aporte é `amount` positivo, retirada é `amount` negativo (não existe
+  coluna de tipo em `goal_contributions`, diferente de
+  `investment_movements`).
+- **`check_goal_completion`** (`BEFORE UPDATE OF current_amount` em
+  `goals`): avança `status` de `em_andamento` para `concluida` quando
+  `current_amount >= target_amount`. **Nunca reverte** — uma retirada que
+  derrube `current_amount` abaixo do alvo não volta o status para
+  `em_andamento` (confirmado empiricamente em teste real,
+  `docs/MODULO_4.md` seção 12).
+- **Sem `deleted_at`** em `goals` — "exclusão" via UI usa `status` na
+  prática (`cancelada` para desativar preservando histórico; `DELETE`
+  físico só remove de vez). `goal_contributions.goal_id` é `ON DELETE
+  CASCADE` a partir de `goals` — excluir uma meta remove seu histórico de
+  aportes junto, sem afetar nenhuma outra tabela.
+- **Achado de segurança avaliado, sem migration:**
+  `goal_contributions.goal_id` não tem trigger de validação de ownership
+  (diferente de `transactions.card_id`/`invoice_id`, protegidos desde a
+  `0025`/`0036`). Testado: um usuário B pode inserir uma
+  `goal_contributions` com `goal_id` de uma meta de outro usuário A (a
+  policy de INSERT só verifica `user_id = auth.uid()`), mas como
+  `recalc_goal_amount` é `SECURITY INVOKER`, a `UPDATE` que ela faz em
+  `goals` roda com o privilégio de B — a RLS de `goals` bloqueia essa
+  `UPDATE` cruzada (0 linhas afetadas). **Confirmado empiricamente:**
+  `current_amount` da meta de A permaneceu inalterado antes/depois do
+  ataque. Decisão: não criar migration — a lacuna existe mas não permite
+  corromper dado de outro usuário, só criar uma linha "órfã" visível
+  apenas para quem a criou. Registrado como achado revisado
+  (`docs/MODULO_4.md` seção 11), não como pendência.
 
 ## 26. Empréstimos/Financiamentos
 

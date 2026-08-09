@@ -407,14 +407,16 @@ em vez de deixar o usuário ver a mensagem crua do Postgres.**
   tela chama `supabase` diretamente.
 - Antes de criar uma tabela/coluna nova, checar se já existe schema
   pronto (ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md)) — os módulos
-  "BACKEND EXISTENTE" (investimentos, empréstimos/financiamentos, metas,
+  "BACKEND EXISTENTE" (investimentos, empréstimos/financiamentos,
   orçamento) já têm tabelas, triggers e enums completos desde a Fase 1;
-  falta só a camada de frontend. **Cartões/Faturas** deixou de ser
-  `ComingSoon` na Fase 4 (`docs/MODULO_4.md`) — use `src/pages/cards/`
-  como referência de como transformar um módulo "BACKEND EXISTENTE" em UI
-  completa. As 7 páginas ainda `ComingSoon` (`investments`, `loans`,
-  `goals`, `planning`, `calendar`, `reports`, `settings` — confirmado via
-  grep por `ComingSoon` em `src/pages/`) são os próximos pontos de entrada
+  falta só a camada de frontend. **Cartões/Faturas** e **Metas** deixaram
+  de ser `ComingSoon` na Fase 4 (`docs/MODULO_4.md`) — use
+  `src/pages/cards/` (integração com transações, mais complexo) ou
+  `src/pages/goals/` (módulo isolado, mais simples) como referência de
+  como transformar um módulo "BACKEND EXISTENTE" em UI completa. As 6
+  páginas ainda `ComingSoon` (`investments`, `loans`, `planning`,
+  `calendar`, `reports`, `settings` — confirmado via grep por
+  `ComingSoon` em `src/pages/`) são os próximos pontos de entrada
   esperados.
 - Reaproveitar componentes de `src/components/shared/` antes de criar um
   novo (seção 16 do `CONTEXTO_PROJETO.md` lista todos).

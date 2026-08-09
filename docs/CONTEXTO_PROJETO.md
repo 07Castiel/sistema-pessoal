@@ -1005,3 +1005,29 @@ migration aplicada, testes financeiros e de segurança linha a linha) em
   RPC atômica para pagamento de fatura, parcelamento no cartão, correção
   de `recalc_invoice_total` para ignorar `deleted_at`/`cancelado` — todas
   detalhadas em `docs/MODULO_4.md` seção 9.
+
+**Segundo módulo da Fase 4 (mesma sessão): Metas.** Backend (`goals`,
+`goal_contributions`) também já existia desde a Fase 1. Detalhamento
+completo em `docs/MODULO_4.md`, Parte 2 (seções 10-15). Resumo:
+
+- **Nenhuma migration** — módulo inteiramente aditivo. Uma lacuna de
+  ownership foi encontrada (`goal_contributions.goal_id` sem trigger de
+  validação, análoga à de `invoice_id`), mas testada e confirmada **sem
+  impacto real** (RLS de `goals` contém o dano na própria trigger
+  `recalc_goal_amount`, `SECURITY INVOKER`) — decisão de não criar
+  migration está documentada e justificada, não é uma omissão.
+- **Retirada de meta** é modelada como `goal_contributions.amount`
+  negativo (schema não tem coluna de tipo, diferente de
+  `investment_movements`).
+- **`check_goal_completion` só avança, nunca reverte** — confirmado
+  empiricamente: retirar valor de uma meta já concluída não volta o
+  status para `em_andamento`. Comportamento pré-existente, preservado.
+- **Bug real encontrado e corrigido:** sheet de detalhe da meta mostrava
+  progresso desatualizado após um aporte (guardava snapshot do objeto em
+  vez de derivar da lista já invalidada) — corrigido antes de declarar a
+  tarefa concluída.
+- Testado como role `authenticated`, usuários descartáveis: 5 cenários
+  financeiros (aporte, conclusão automática, retirada, exclusão com
+  recálculo) + RLS multiusuário incluindo o ataque de `goal_id` de outro
+  usuário — todos os dados de teste removidos, contagem zero confirmada.
+- TypeScript/ESLint/build: 0 erros.

@@ -159,3 +159,16 @@ export const CREDIT_CARD_ICON_OPTIONS = [
   "briefcase",
   "gift",
 ]
+
+export const GOAL_ICON_OPTIONS = [
+  "target",
+  "home",
+  "car",
+  "plane",
+  "graduation-cap",
+  "piggy-bank",
+  "gift",
+  "briefcase",
+  "heart-pulse",
+  "party-popper",
+]
