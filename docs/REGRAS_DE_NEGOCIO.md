@@ -188,14 +188,43 @@ lançamentos antigos que já o referenciam (o join não é afetado por
 custo na tela de Transações. Exclusão é `DELETE` físico (sem lixeira),
 com aviso de quantos lançamentos usam o centro antes de excluir.
 
-## 14. Cartões/Faturas — **[Backend]**
+## 14. Cartões/Faturas — **[UI]** (implementado na Fase 4)
 
-Tabelas `credit_cards`, `card_invoices`, view `v_card_usage`, trigger
-`recalc_invoice_total` — todos existentes e smoke-testados (fatura
-0→150 ao lançar compra no cartão). `transactions.card_id`/`invoice_id`
-já existem como colunas prontas para associar um lançamento a um
-cartão/fatura. **Rota `/cartoes` é `ComingSoon`** — nenhum repository,
-service ou hook de cartões existe em `src/`.
+CRUD de cartões (`/cartoes`): nome, banco, bandeira, limite, dias de
+fechamento/vencimento, conta associada (opcional), status
+(ativo/inativo/arquivado — reaproveita `account_status`). Exclusão física
+(sem `deleted_at` nesta tabela) — segura porque `card_invoices.card_id`
+é `ON DELETE CASCADE` (faturas do cartão somem junto) e
+`transactions.card_id`/`invoice_id` são `ON DELETE SET NULL` (transações
+reais nunca são apagadas, só perdem o vínculo).
+
+**Compra no cartão:** formulário próprio e isolado (não é o mesmo
+formulário de Transações da Fase 3). Sempre gera uma despesa com
+`account_id: null` (sem efeito de saldo) e `status: "pendente"` — a
+liquidação acontece coletivamente ao pagar a fatura, não por compra
+individual. A fatura do período é resolvida automaticamente a partir da
+data da compra e do dia de fechamento do cartão (find-or-create sobre
+`card_invoices`, decisão de implementação documentada em
+`docs/MODULO_4.md`, não uma regra pré-existente).
+
+**Pagar fatura:** cria uma segunda transação — despesa comum,
+`account_id` setado, `status: "pago"`, `invoice_id: null` de propósito
+(para não duplicar o total via `recalc_invoice_total`) — que debita a
+conta escolhida através do mecanismo de saldo já existente, sem nenhuma
+lógica nova. Fatura marcada `status: "paga"` só depois da transação ser
+criada com sucesso.
+
+**Limite de uso** (`v_card_usage`): soma `total_amount` das faturas
+`aberta`/`fechada` do cartão — faturas `paga` liberam o limite
+automaticamente (view já existente, não alterada).
+
+**[Requer confirmação — pendências não bloqueantes, ver `docs/MODULO_4.md`
+seção 9]:** seletor de cartão dentro do formulário de Transações da Fase
+3 (hoje só existe pela tela de Cartões); parcelamento/recorrência de
+compra no cartão (não suportado nesta primeira versão);
+`recalc_invoice_total` conta compras excluídas/canceladas no total da
+fatura (comportamento herdado da trigger, não corrigido nesta sessão por
+exigir definição de regra antes).
 
 ## 15. Investimentos — **[Backend]**
 
@@ -270,7 +299,7 @@ liste todos os eventos do sistema.
 
 | Status | Domínios |
 |---|---|
-| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo |
+| **[UI] completo** | Contas, Categorias (Fase 2, não listada acima pois fora do escopo pedido mas confirmada em `CONTEXTO_PROJETO.md`), Transações (receitas/despesas), Status de transação, Saldo, Exclusão/restauração, Parcelamentos, Recorrências, Tags, Centros de custo, Cartões/Faturas (Fase 4) |
 | **[UI] parcial** | Anexos (só Contas + Transações), Notificações (só o sino, sem central) |
-| **[Backend] pronto, sem UI** | Transferências, Cartões/Faturas, Investimentos, Metas, Orçamentos, Empréstimos, Financiamentos |
+| **[Backend] pronto, sem UI** | Transferências, Investimentos, Metas, Orçamentos, Empréstimos, Financiamentos |
 | **[Requer confirmação]** | Fonte de verdade de investimento (tabela dedicada vs. transação categorizada), se Empréstimos e Financiamentos serão uma tela ou duas, alcance real de notificações automáticas em uso |

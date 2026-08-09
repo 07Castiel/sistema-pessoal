@@ -39,6 +39,7 @@ migration `0032`, correção de exposição desnecessária).
 | `0024`–`0033` | Fase 3 (Transações) — ver seção 20 abaixo |
 | `0034` | `revoke_public_execute_legacy_trigger_functions` — hardening de `EXECUTE` (seção 31) |
 | `0035` | `cost_centers_active_flag` — coluna `active` em `cost_centers` |
+| `0036` | `validate_transaction_invoice_ownership` — Fase 4, ownership de `invoice_id` (seção 31) |
 
 Este documento **não altera nem cria nenhuma migration**. Qualquer
 mudança de schema deve passar por `list_migrations` do MCP do Supabase
@@ -402,9 +403,19 @@ infinito. Ativar/pausar = `active`. Encerrar = `active=false` +
 
 Tabelas `credit_cards`/`card_invoices` com schema completo (enum
 `invoice_status`: `aberta`, `fechada`, `paga`, `atrasada`), trigger
-`recalc_invoice_total` já ativo e smoke-testado (fatura 0→150 ao lançar
-compra no cartão, `CONTEXTO_PROJETO.md` seção 31.6). **Sem UI** — rota
-`/cartoes` é `ComingSoon`.
+`recalc_invoice_total` já ativo desde a Fase 1. **UI implementada na Fase
+4** (`docs/MODULO_4.md`) — rota `/cartoes`. Resolução do período da
+fatura (`reference_month`/`closing_date`/`due_date` a partir de
+`closing_day`/`due_day`) é feita no frontend (`src/lib/card-invoice.ts`),
+não no banco — não existe RPC nem trigger para isso. `fechada`/`atrasada`
+nunca são gravados pela UI (só `aberta` na criação e `paga` no pagamento
+manual) — são sempre derivados por data para exibição, mesmo espírito do
+`effective_status` de transações. **Limitação conhecida, não introduzida
+por esta fase:** `recalc_invoice_total` soma `amount` de toda
+`transactions` vinculada por `invoice_id` sem filtrar `deleted_at`/
+`status` — uma compra excluída ou cancelada continua contando no total da
+fatura (confirmado lendo `pg_get_functiondef`, não alterado por não ser
+migration aprovada nesta sessão).
 
 ## 24. Investimentos
 
@@ -526,6 +537,46 @@ ativar/desativar centro de custo sem soft delete — a tabela não tem
 FKs de `transactions.cost_center_id`/`recurring_rules.cost_center_id`
 são `ON DELETE SET NULL` (confirmado via `pg_constraint` antes da
 decisão).
+
+### Migration `0036_validate_transaction_invoice_ownership` (Fase 4)
+
+Achado: `validate_transaction_references` já validava ownership de
+`account_id`/`category_id`/`cost_center_id`/`card_id`, mas **não**
+validava `invoice_id` — a FK só exigia que a fatura existisse, não que
+pertencesse ao mesmo usuário. Como a Fase 4 é o primeiro módulo a popular
+`invoice_id` de verdade, era uma vulnerabilidade real (mesma classe da
+`0025`). Corrigido acrescentando a checagem na mesma function, mais
+`drop`/`create trigger` para incluir `invoice_id` na lista de colunas que
+disparam revalidação em `UPDATE`:
+
+```sql
+create or replace function public.validate_transaction_references()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+-- ... (checagens existentes de account_id/cost_center_id/card_id inalteradas) ...
+  if new.invoice_id is not null and not exists (
+    select 1 from public.card_invoices where id = new.invoice_id and user_id = new.user_id
+  ) then
+    raise exception 'Fatura inválida ou pertencente a outro usuário.';
+  end if;
+-- ... (checagem de category_id inalterada) ...
+$function$;
+
+drop trigger if exists trg_validate_transaction_references on public.transactions;
+create trigger trg_validate_transaction_references
+  before insert or update of user_id, account_id, category_id, cost_center_id, card_id, invoice_id, type
+  on public.transactions
+  for each row execute function public.validate_transaction_references();
+```
+
+Testado e confirmado: usuário B tentando inserir transação com
+`invoice_id` de fatura do usuário A recebe `Fatura inválida ou
+pertencente a outro usuário.` (`docs/MODULO_4.md` seção 6). Aplicada
+com `credit_cards`/`card_invoices` em 0 linhas — sem impacto em dado
+real. Aprovada pelo usuário antes de aplicar.
 
 ### Functions internas (triggers, `SECURITY DEFINER`, sem `EXECUTE` para ninguém além do disparo automático)
 

@@ -5,19 +5,23 @@
 > no banco de produção (`execute_sql`) e no repositório local no momento da
 > escrita — não são recordados de memória.
 >
-> **Última atualização:** 2026-08-08, fim da sessão de finalização da Fase 3
-> (recorrências, anexos, tags, centros de custo, dashboard, testes completos).
+> **Última atualização:** 2026-08-09, sessão que documentou a arquitetura/
+> banco/regras complementares e implementou o primeiro módulo da Fase 4
+> (Cartões e Faturas). Ver seção 33 e `docs/MODULO_4.md`.
 
 ---
 
 ## 1. Estado atual em uma frase
 
-**FASE 3 CONCLUÍDA.** Contas (Fase 1), Categorias (Fase 2) e Receitas/Despesas
-(Fase 3, incluindo recorrências, anexos, tags, centros de custo e dashboard
-com dados reais) estão implementados, testados (funcional, financeiro,
-segurança multiusuário, dark mode, responsividade) e com 0 erros de
-TypeScript/ESLint e build funcionando. Ver seção 32 para o detalhamento
-completo da sessão de finalização. **Nenhum código foi commitado.**
+**FASE 3 CONCLUÍDA e commitada** (`58936f2`, `216e2b4`, `e629d8e`, enviados
+para `origin/develop`). **FASE 4 iniciada:** Cartões e Faturas implementados
+e testados (ver seção 33). Contas (Fase 1), Categorias (Fase 2),
+Receitas/Despesas (Fase 3, incluindo recorrências, anexos, tags, centros de
+custo e dashboard com dados reais) e agora Cartões/Faturas (Fase 4) estão
+implementados, testados (funcional, financeiro, segurança multiusuário,
+dark mode, responsividade) e com 0 erros de TypeScript/ESLint e build
+funcionando. Ver seção 32 para o detalhamento da finalização da Fase 3 e
+seção 33 para Cartões/Faturas.
 
 ---
 
@@ -957,3 +961,47 @@ Documentação complementar (`docs/ARQUITETURA.md`, `docs/BANCO_DE_DADOS.md`,
 `docs/REGRAS_DE_NEGOCIO.md`) ainda não foi criada — é a única pendência da
 seção 28 que não é estritamente sobre funcionalidade da Fase 3, por isso
 não bloqueia declarar a fase concluída.
+
+**Atualização (sessão seguinte):** os três documentos foram criados,
+commitados (`e629d8e`) e enviados para `origin/develop`. Pendência
+resolvida.
+
+---
+
+## 33. Fase 4 — Cartões e Faturas (2026-08-09)
+
+Primeiro módulo da Fase 4. Detalhamento completo (decisões de design,
+migration aplicada, testes financeiros e de segurança linha a linha) em
+[`docs/MODULO_4.md`](./MODULO_4.md). Resumo:
+
+- **Backend reaproveitado 100%:** `credit_cards`, `card_invoices`,
+  `v_card_usage`, trigger `recalc_invoice_total` já existiam desde a Fase
+  1. Nenhuma tabela ou coluna nova.
+- **Migration `0036_validate_transaction_invoice_ownership`:** único
+  ajuste de banco desta sessão — fecha uma lacuna real de segurança
+  (ownership de `invoice_id` não validada em `validate_transaction_references`,
+  mesma classe de achado da migration `0025`), aprovada pelo usuário antes
+  de aplicar. Testada e confirmada bloqueando o ataque.
+- **Lógica de saldo intocada:** compra no cartão nunca tem `account_id`
+  (sem efeito de saldo); pagar a fatura gera uma despesa comum
+  (`account_id` setado, `status: pago`, `invoice_id: null` de propósito)
+  que passa pelo trigger de saldo já existente, sem nenhum mecanismo novo.
+  `apply_transaction_balance`, `_transaction_balance_effect` e
+  `apply_transfer_balance` não foram tocadas.
+- **Formulário de Transações (Fase 3) preservado:** compra no cartão usa
+  formulário próprio e isolado (`CardPurchaseDialog`), não altera
+  `transaction.schema.ts`/`TransactionFormDialog`.
+- **Testado como role `authenticated`, usuários descartáveis:** cenários
+  financeiros (compra sem efeito de saldo, total da fatura correto,
+  pagamento debitando a conta certa, sem duplicar o total), RLS/ownership
+  multiusuário (incluindo o ataque específico de `invoice_id`), UI real no
+  navegador (criar cartão → lançar compra → pagar fatura → saldo
+  refletido em Contas), dark mode, mobile. Todos os dados de teste
+  removidos, contagem zero confirmada.
+- **TypeScript/ESLint/build:** 0 erros (um erro real de lint,
+  `react-hooks/set-state-in-effect`, foi encontrado e corrigido durante a
+  implementação).
+- **Pendências não bloqueantes:** seletor de cartão na tela de Transações,
+  RPC atômica para pagamento de fatura, parcelamento no cartão, correção
+  de `recalc_invoice_total` para ignorar `deleted_at`/`cancelado` — todas
+  detalhadas em `docs/MODULO_4.md` seção 9.

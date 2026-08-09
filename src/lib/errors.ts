@@ -8,6 +8,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   uq_categories_user_type_parent_name_active:
     "Já existe uma categoria ativa com esse nome neste tipo. Escolha outro nome.",
   tags_user_id_name_key: "Você já tem uma tag com esse nome.",
+  card_invoices_card_id_reference_month_key: "Já existe uma fatura para esse cartão neste mês.",
 }
 
 export function getErrorMessage(error: unknown, fallback = "Ocorreu um erro inesperado"): string {

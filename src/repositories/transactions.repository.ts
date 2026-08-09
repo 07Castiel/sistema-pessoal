@@ -6,6 +6,7 @@ import type {
   TransactionType,
 } from "@/types"
 import type { TransactionFormValues } from "@/schemas/transaction.schema"
+import type { CardPurchaseFormValues } from "@/schemas/card-purchase.schema"
 
 export type StatusFilter =
   | "todos"
@@ -286,5 +287,77 @@ export const transactionsRepository = {
       .not("deleted_at", "is", null)
     if (error) throw error
     return count ?? 0
+  },
+
+  /**
+   * Compra no cartão (Fase 4): sempre `account_id: null` — a
+   * `_transaction_balance_effect` retorna 0 quando a conta é nula, então
+   * uma compra no cartão nunca mexe em saldo de conta sozinha. Nasce
+   * "pendente" porque a liquidação acontece coletivamente ao pagar a
+   * fatura (ver `createInvoiceSettlement`), não por compra individual.
+   */
+  async createCardPurchase(
+    userId: string,
+    cardId: string,
+    invoiceId: string,
+    values: CardPurchaseFormValues
+  ): Promise<Transaction> {
+    const { data, error } = await supabase
+      .from("transactions")
+      .insert({
+        user_id: userId,
+        type: "despesa",
+        description: values.description,
+        amount: values.amount,
+        date: values.date,
+        category_id: values.category_id,
+        cost_center_id: values.cost_center_id,
+        supplier: values.supplier || null,
+        notes: values.notes || null,
+        card_id: cardId,
+        invoice_id: invoiceId,
+        account_id: null,
+        status: "pendente",
+      })
+      .select("*")
+      .single()
+    if (error) throw error
+
+    if (values.tag_ids.length > 0) await replaceTags(data.id, values.tag_ids)
+    return data
+  },
+
+  /**
+   * Transação de despesa comum que representa o pagamento de uma fatura —
+   * `account_id` setado, `status: "pago"`, passa pelo trigger de saldo
+   * normal (`apply_transaction_balance`), sem nenhum mecanismo novo.
+   * `invoice_id` fica de propósito fora do payload: se apontasse para a
+   * própria fatura, `recalc_invoice_total` somaria o pagamento de volta
+   * no total dela (`select sum(amount) from transactions where invoice_id
+   * = ...`), inflando o valor. Ver docs/MODULO_4.md.
+   */
+  async createInvoiceSettlement(
+    userId: string,
+    cardId: string,
+    accountId: string,
+    amount: number,
+    description: string
+  ): Promise<Transaction> {
+    const { data, error } = await supabase
+      .from("transactions")
+      .insert({
+        user_id: userId,
+        type: "despesa",
+        description,
+        amount,
+        date: new Date().toISOString().slice(0, 10),
+        account_id: accountId,
+        card_id: cardId,
+        status: "pago",
+      })
+      .select("*")
+      .single()
+    if (error) throw error
+    return data
   },
 }

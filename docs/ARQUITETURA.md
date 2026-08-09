@@ -407,13 +407,15 @@ em vez de deixar o usuário ver a mensagem crua do Postgres.**
   tela chama `supabase` diretamente.
 - Antes de criar uma tabela/coluna nova, checar se já existe schema
   pronto (ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md)) — os módulos
-  "BACKEND EXISTENTE" (cartões, investimentos, empréstimos/financiamentos,
-  metas, orçamento) já têm tabelas, triggers e enums completos desde a
-  Fase 1; falta só a camada de frontend. As 8 páginas hoje `ComingSoon`
-  (`cards`, `investments`, `loans`, `goals`, `planning`, `calendar`,
-  `reports`, `settings` — confirmado via grep por `ComingSoon` em
-  `src/pages/`) são os pontos de entrada esperados para essas
-  implementações futuras.
+  "BACKEND EXISTENTE" (investimentos, empréstimos/financiamentos, metas,
+  orçamento) já têm tabelas, triggers e enums completos desde a Fase 1;
+  falta só a camada de frontend. **Cartões/Faturas** deixou de ser
+  `ComingSoon` na Fase 4 (`docs/MODULO_4.md`) — use `src/pages/cards/`
+  como referência de como transformar um módulo "BACKEND EXISTENTE" em UI
+  completa. As 7 páginas ainda `ComingSoon` (`investments`, `loans`,
+  `goals`, `planning`, `calendar`, `reports`, `settings` — confirmado via
+  grep por `ComingSoon` em `src/pages/`) são os próximos pontos de entrada
+  esperados.
 - Reaproveitar componentes de `src/components/shared/` antes de criar um
   novo (seção 16 do `CONTEXTO_PROJETO.md` lista todos).
 - Nunca duplicar lógica de saldo — ela já existe no banco (trigger

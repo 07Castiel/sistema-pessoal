@@ -150,3 +150,12 @@ export const COST_CENTER_ICON_OPTIONS = [
   "wrench",
   "tag",
 ]
+
+export const CREDIT_CARD_ICON_OPTIONS = [
+  "credit-card",
+  "wallet",
+  "landmark",
+  "smartphone",
+  "briefcase",
+  "gift",
+]
