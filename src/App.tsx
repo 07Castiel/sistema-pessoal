@@ -6,6 +6,7 @@ import { QueryProvider } from "@/providers/query-provider"
 import { AuthProvider } from "@/contexts/auth-context"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { GuestRoute } from "@/components/auth/guest-route"
+import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { AppLayout } from "@/layouts/app-layout"
 import { AuthLayout } from "@/layouts/auth-layout"
 
@@ -32,51 +33,53 @@ import SettingsPage from "@/pages/settings/settings"
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <QueryProvider>
-        <AuthProvider>
-          <TooltipProvider delayDuration={200}>
-            <BrowserRouter basename={import.meta.env.BASE_URL}>
-              <Routes>
-                <Route element={<GuestRoute />}>
-                  <Route element={<AuthLayout />}>
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/registrar" element={<RegisterPage />} />
-                    <Route path="/esqueci-senha" element={<ForgotPasswordPage />} />
+    <ErrorBoundary>
+      <ThemeProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <TooltipProvider delayDuration={200}>
+              <BrowserRouter basename={import.meta.env.BASE_URL}>
+                <Routes>
+                  <Route element={<GuestRoute />}>
+                    <Route element={<AuthLayout />}>
+                      <Route path="/login" element={<LoginPage />} />
+                      <Route path="/registrar" element={<RegisterPage />} />
+                      <Route path="/esqueci-senha" element={<ForgotPasswordPage />} />
+                    </Route>
                   </Route>
-                </Route>
 
-                <Route path="/redefinir-senha" element={<AuthLayout />}>
-                  <Route index element={<ResetPasswordPage />} />
-                </Route>
-
-                <Route element={<ProtectedRoute />}>
-                  <Route element={<AppLayout />}>
-                    <Route path="/" element={<DashboardPage />} />
-                    <Route path="/contas" element={<AccountsPage />} />
-                    <Route path="/categorias" element={<CategoriesPage />} />
-                    <Route path="/transacoes" element={<TransactionsPage />} />
-                    <Route path="/tags" element={<TagsPage />} />
-                    <Route path="/cartoes" element={<CardsPage />} />
-                    <Route path="/recorrencias" element={<RecurringPage />} />
-                    <Route path="/investimentos" element={<InvestmentsPage />} />
-                    <Route path="/emprestimos" element={<LoansPage />} />
-                    <Route path="/metas" element={<GoalsPage />} />
-                    <Route path="/planejamento" element={<PlanningPage />} />
-                    <Route path="/calendario" element={<CalendarPage />} />
-                    <Route path="/centro-de-custos" element={<CostCentersPage />} />
-                    <Route path="/relatorios" element={<ReportsPage />} />
-                    <Route path="/configuracoes" element={<SettingsPage />} />
+                  <Route path="/redefinir-senha" element={<AuthLayout />}>
+                    <Route index element={<ResetPasswordPage />} />
                   </Route>
-                </Route>
 
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </BrowserRouter>
-            <Toaster richColors position="top-right" />
-          </TooltipProvider>
-        </AuthProvider>
-      </QueryProvider>
-    </ThemeProvider>
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<AppLayout />}>
+                      <Route path="/" element={<DashboardPage />} />
+                      <Route path="/contas" element={<AccountsPage />} />
+                      <Route path="/categorias" element={<CategoriesPage />} />
+                      <Route path="/transacoes" element={<TransactionsPage />} />
+                      <Route path="/tags" element={<TagsPage />} />
+                      <Route path="/cartoes" element={<CardsPage />} />
+                      <Route path="/recorrencias" element={<RecurringPage />} />
+                      <Route path="/investimentos" element={<InvestmentsPage />} />
+                      <Route path="/emprestimos" element={<LoansPage />} />
+                      <Route path="/metas" element={<GoalsPage />} />
+                      <Route path="/planejamento" element={<PlanningPage />} />
+                      <Route path="/calendario" element={<CalendarPage />} />
+                      <Route path="/centro-de-custos" element={<CostCentersPage />} />
+                      <Route path="/relatorios" element={<ReportsPage />} />
+                      <Route path="/configuracoes" element={<SettingsPage />} />
+                    </Route>
+                  </Route>
+
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </BrowserRouter>
+              <Toaster richColors position="top-right" />
+            </TooltipProvider>
+          </AuthProvider>
+        </QueryProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   )
 }
