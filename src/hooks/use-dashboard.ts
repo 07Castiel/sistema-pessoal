@@ -93,7 +93,7 @@ export function useDashboard(period: DashboardPeriod = currentPeriod()) {
       payable: 0,
       receivable: 0,
       overdueExpense: 0,
-      pendingIncome: 0,
+      overdueIncome: 0,
     },
     periodIncome,
     periodExpense,

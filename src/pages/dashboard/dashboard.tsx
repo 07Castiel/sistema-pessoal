@@ -166,9 +166,10 @@ export default function DashboardPage() {
           loading={isLoading}
         />
         <KpiCard
-          label="Receitas pendentes"
-          value={formatCurrency(pendingSummary.pendingIncome)}
+          label="Receitas atrasadas"
+          value={formatCurrency(pendingSummary.overdueIncome)}
           icon={Clock}
+          tone={pendingSummary.overdueIncome > 0 ? "destructive" : "default"}
           loading={isLoading}
         />
       </div>

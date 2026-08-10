@@ -11,7 +11,7 @@ export interface PendingSummary {
   payable: number
   receivable: number
   overdueExpense: number
-  pendingIncome: number
+  overdueIncome: number
 }
 
 export const dashboardRepository = {
@@ -118,7 +118,7 @@ export const dashboardRepository = {
       .eq("user_id", userId)
     if (error) throw error
 
-    const summary: PendingSummary = { payable: 0, receivable: 0, overdueExpense: 0, pendingIncome: 0 }
+    const summary: PendingSummary = { payable: 0, receivable: 0, overdueExpense: 0, overdueIncome: 0 }
     for (const row of data ?? []) {
       const total = Number(row.total)
       if (row.type === "despesa") {
@@ -126,7 +126,7 @@ export const dashboardRepository = {
         if (row.is_overdue) summary.overdueExpense += total
       } else if (row.type === "receita") {
         summary.receivable += total
-        if (!row.is_overdue) summary.pendingIncome += total
+        if (row.is_overdue) summary.overdueIncome += total
       }
     }
     return summary
