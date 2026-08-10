@@ -7,23 +7,19 @@
 > `pg_get_functiondef`, `information_schema`) e leitura do código real no
 > momento da escrita — nada foi inventado.
 >
-> **Atualizado em:** 2026-08-09/10 — **a Fase 4 está 100% concluída.**
-> Nesta sequência de sessões foram implementados, em ordem,
-> **Planejamento/Orçamento**, **Relatórios**, **Configurações** e
-> **Calendário** (repository → service → hook → componentes → página em
-> todos), seguidos de uma **auditoria geral do sistema inteiro** (21
-> áreas: arquitetura, TypeScript, ESLint, build, banco, RLS, segurança
-> multiusuário, integridade financeira, performance, cache, UX,
-> responsividade, dark mode, etc.) e de uma **auditoria financeira
-> cruzada** entre todos os módulos (Dashboard, Relatórios, Contas,
-> Transações, Cartões, Metas, Investimentos, Empréstimos, Orçamento,
-> Calendário). Dois bugs reais adicionais foram encontrados e corrigidos
-> na auditoria (ver seção 11). **Não existe mais nenhuma página
-> `ComingSoon`.** Ver `docs/MODULO_4.md` Partes 5-8 + seção de auditoria
-> (53-56) para o detalhamento completo de cada módulo e da auditoria.
-> Este documento foi reescrito para refletir o estado final — as seções
-> antigas de "análise preliminar" dos módulos (antiga seção 13) foram
-> convertidas em registro histórico ou removidas onde já cumpridas.
+> **Atualizado em:** 2026-08-10 — **Fase 4 concluída (100%) e sistema
+> auditado para pré-produção.** A sequência de sessões anteriores
+> implementou os 8 módulos da Fase 4 e uma auditoria geral pós-módulos
+> (ver seções 33-36 de `docs/CONTEXTO_PROJETO.md` e `docs/MODULO_4.md`
+> Partes 5-8). Esta sessão foi uma **auditoria final de pré-produção**
+> dedicada — segurança, integridade financeira, banco, performance,
+> frontend, qualidade e preparação para deploy no Vercel, sem nenhuma
+> funcionalidade nova. Encontrou e corrigiu **5 problemas reais**, o
+> mais crítico sendo um bug de build que quebraria 100% do deploy no
+> Vercel (tela em branco). Documento completo:
+> **[`docs/PRE_PRODUCAO.md`](./PRE_PRODUCAO.md)** — leia-o antes de
+> qualquer trabalho relacionado a deploy/segurança/performance. **Não
+> existe mais nenhuma página `ComingSoon`.**
 
 ---
 
@@ -69,28 +65,36 @@ Confirmado nesta sessão (antes do commit final de documentação):
 ```
 branch atual:      develop
 working tree:      docs/*.md modificados, ainda não commitados (ver seção abaixo)
-HEAD local:         77cba4b
-origin/develop:     77cba4b (idêntico ao HEAD local)
+HEAD local:         863bb7e
+origin/develop:     1ae86ed (será sincronizado após o commit final de documentação)
 origin/main:        eb92bfa  (intacta, nenhum push desde o commit inicial)
 ```
 
 Histórico (mais recente primeiro):
 
 ```
+863bb7e  fix(estabilidade): adiciona ErrorBoundary global
+3abefc8  fix(deploy): corrige base path do Vite e adiciona vercel.json para SPA
+1ae86ed  docs: atualiza documentacao apos finalizacao completa da fase 4
 77cba4b  fix(auditoria): corrige bugs reais encontrados na auditoria geral
 d5d640d  feat(calendario): implementa calendario financeiro consolidado
 ba6108d  feat(configuracoes): implementa perfil, tema, metas financeiras e senha
 a89ca50  feat(relatorios): implementa modulo de relatorios financeiros
-e5e457f  docs: atualiza handoff apos modulo de planejamento e orcamento
-cad741d  feat(planejamento): implementa modulo de orcamento
-cb22baa  chore: trigger Vercel deployment
-86c68dc  docs: prepara handoff para continuidade da fase 4
-8a0c9f4  feat(financeiro): implementa emprestimos e financiamentos
 ```
 
-Um commit final de documentação (`docs: ...`) fecha esta sequência de
-sessões — confira `git log --oneline -6` para confirmar que ele já está
-em `origin/develop` no momento em que você lê isto.
+Um commit final de documentação (`docs: ...`) fecha esta sessão de
+pré-produção — confira `git log --oneline -6` para confirmar que ele já
+está em `origin/develop` no momento em que você lê isto.
+
+**Migration aplicada nesta sessão (pré-produção):**
+`0037_rls_auth_uid_performance_optimization` — reescreve, via `ALTER
+POLICY`, `qual`/`with_check` de todas as policies RLS (schemas `public`
+e `storage`) que ainda usavam `auth.uid()` sem subquery, trocando por
+`(select auth.uid())` (mesma semântica, avaliação uma vez por query em
+vez de uma vez por linha). Aditiva, não recria nenhuma policy, retestada
+com `get_advisors` e com 2 usuários descartáveis (zero regressão de
+isolamento). Detalhe completo em `docs/PRE_PRODUCAO.md` seção 2 e
+`docs/BANCO_DE_DADOS.md` seção 34.
 
 **Migration aplicada — Relatórios (`a89ca50`):**
 `fix_v_net_worth_auth_users_permission` — corrige um bug real
@@ -149,18 +153,21 @@ nenhuma página `ComingSoon` no projeto.**
 | `docs/MODULO_3.md` | Decisões técnicas da Fase 3 (transações, saldo, parcelamento, recorrências) |
 | `docs/MODULO_4.md` | **O mais importante para os módulos da Fase 4** — 8 partes, uma por módulo (Cartões/Faturas, Metas, Investimentos, Empréstimos/Financiamentos, Orçamento, Relatórios, Configurações, Calendário), cada uma com decisões, fórmulas, testes, bugs e pendências, mais uma seção final de auditoria geral do sistema (bugs encontrados/corrigidos, achados documentados não corrigidos) |
 | `docs/ARQUITETURA.md` | Padrões de código: camadas, TanStack Query, formulários, dialogs, erros, convenções |
-| `docs/BANCO_DE_DADOS.md` | Schema completo: tabelas, enums, views, functions, RLS, segurança — **atualizado a cada módulo da Fase 4** |
+| `docs/BANCO_DE_DADOS.md` | Schema completo: tabelas, enums, views, functions, RLS, segurança — **atualizado a cada módulo da Fase 4 e na auditoria de pré-produção** |
 | `docs/REGRAS_DE_NEGOCIO.md` | Regras por domínio, marcadas `[UI]`/`[Backend]`/`[Requer confirmação]` |
+| `docs/PRE_PRODUCAO.md` | **Novo.** Registro completo da auditoria final de pré-produção: bugs encontrados/corrigidos, testes de segurança, estado do banco, checklist de deploy no Vercel (variáveis, `vercel.json`, configuração necessária no Supabase Auth) |
 
-**Leia nesta ordem na próxima sessão:** este arquivo → `MODULO_4.md`
-(se a próxima tarefa envolver um módulo já implementado, ou a seção de
-auditoria se for uma dúvida sobre o estado geral) →
-`BANCO_DE_DADOS.md`/`REGRAS_DE_NEGOCIO.md` (seções relevantes) →
-`ARQUITETURA.md` só se precisar relembrar um padrão específico. **Não é
-necessário reler tudo — os 8 módulos da Fase 4 já implementados estão
-completamente documentados e não precisam de nova investigação.** Não
-há um "próximo módulo" definido — ver seção 14 (reescrita) para
-orientação sobre possíveis próximos passos.
+**Leia nesta ordem na próxima sessão:** este arquivo → `docs/PRE_PRODUCAO.md`
+(se a tarefa envolver deploy, segurança ou qualquer dúvida sobre "o
+sistema está pronto?") → `MODULO_4.md` (se a próxima tarefa envolver um
+módulo já implementado) → `BANCO_DE_DADOS.md`/`REGRAS_DE_NEGOCIO.md`
+(seções relevantes) → `ARQUITETURA.md` só se precisar relembrar um
+padrão específico. **Não é necessário reler tudo — os 8 módulos da Fase
+4 e a auditoria de pré-produção já estão completamente documentados e
+não precisam de nova investigação.** Não há um "próximo módulo"
+definido — ver seção 14 para orientação sobre possíveis próximos
+passos, e `docs/PRE_PRODUCAO.md` seção 6 para os passos manuais que
+faltam antes do primeiro deploy real.
 
 ---
 
@@ -911,13 +918,20 @@ fonte de verdade de Investimentos).
 
 ## CHECKLIST — PRÓXIMA SESSÃO
 
-**A Fase 4 está 100% concluída — não há um próximo módulo predefinido.**
-A primeira coisa a fazer na próxima sessão é **perguntar ao usuário**
-qual direção seguir (ver seção 14 para candidatos honestos: dívida
-técnica de performance, funcionalidades novas fora do escopo original,
-deploy). Não presuma um módulo específico.
+**A Fase 4 está 100% concluída e o sistema passou por uma auditoria de
+pré-produção completa (`docs/PRE_PRODUCAO.md`) — não há um próximo
+módulo predefinido.** Os passos manuais que restam antes do primeiro
+deploy real (criar/conectar projeto Vercel, configurar variáveis de
+ambiente, configurar Site URL/Redirect URLs e Leaked Password
+Protection no Supabase Auth) estão listados em `docs/PRE_PRODUCAO.md`
+seção 6 — não são executáveis por um agente. A primeira coisa a fazer
+na próxima sessão é **perguntar ao usuário** qual direção seguir (ver
+seção 14 para candidatos honestos, ou se o usuário já fez o deploy
+manual e quer validação pós-deploy). Não presuma um módulo específico.
 
 - [ ] Ler este arquivo (`HANDOFF_CONTINUIDADE.md`) por completo
+- [ ] Ler `docs/PRE_PRODUCAO.md` se a tarefa envolver deploy, segurança
+      ou performance
 - [ ] Confirmar `git branch --show-current`, `git status`, `git log -10`
 - [ ] Confirmar `git ls-remote origin` (branch `develop` = HEAD local;
       `main` = `eb92bfa`)

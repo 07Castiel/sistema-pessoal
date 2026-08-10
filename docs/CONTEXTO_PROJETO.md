@@ -5,12 +5,12 @@
 > no banco de produção (`execute_sql`) e no repositório local no momento da
 > escrita — não são recordados de memória.
 >
-> **Última atualização:** 2026-08-09/10, sessão que implementou os dois
-> últimos módulos da Fase 4 (Configurações e Calendário) e executou uma
-> auditoria geral do sistema inteiro. **A Fase 4 está 100% concluída.**
-> Ver seção 36 e `docs/MODULO_4.md` Partes 7-8 + auditoria. Seções 33-35
-> documentam os módulos anteriores da Fase 4 (Cartões, Metas,
-> Investimentos, Empréstimos/Financiamentos, Orçamentos, Relatórios).
+> **Última atualização:** 2026-08-10, sessão de **auditoria final de
+> pré-produção** (segurança, integridade financeira, banco, performance,
+> frontend, qualidade e preparação para deploy no Vercel), executada
+> sobre a Fase 4 já 100% concluída. Ver seção 37 e `docs/PRE_PRODUCAO.md`
+> (documento novo, registro completo desta auditoria). Seções 33-36
+> documentam os módulos da Fase 4 e a auditoria geral que a encerrou.
 
 ---
 
@@ -27,9 +27,15 @@ estão implementados, testados (funcional, financeiro, segurança
 multiusuário, dark mode, responsividade) e com 0 erros de TypeScript/
 ESLint e build funcionando. **Nenhuma página `ComingSoon` restante** —
 uma auditoria geral do sistema foi executada após a conclusão de todos
-os módulos (seção 36), com 2 bugs reais adicionais encontrados e
-corrigidos e um achado de performance real documentado para uma sessão
-futura dedicada. Próxima fase (5?) não definida — ver
+os módulos (seção 36). Na sequência, uma **auditoria final de
+pré-produção** (seção 37, `docs/PRE_PRODUCAO.md`) encontrou e corrigiu
+mais 5 problemas reais — o mais crítico sendo um `base` do Vite errado
+que quebraria 100% do deploy no Vercel (tela em branco) — e aplicou a
+otimização de performance de RLS que a auditoria anterior tinha
+deixado como pendência (66 policies). **O sistema está pronto para
+produção** do ponto de vista técnico; restam só configurações manuais
+no Vercel/Supabase (não executáveis por um agente) antes do primeiro
+deploy real. Próxima fase (5?) não definida — ver
 `docs/HANDOFF_CONTINUIDADE.md` para o estado real e possíveis próximos
 passos.
 
@@ -1285,3 +1291,52 @@ completa: Configurações e Calendário.** Com esses dois, **a Fase 4 está
   pré-existente `auth_leaked_password_protection`. Nenhum segredo
   versionado. Todos os dados de teste (de todos os módulos desta fase)
   removidos, contagem zero confirmada.
+
+## 37. Auditoria final de pré-produção (2026-08-10)
+
+Sessão dedicada exclusivamente a correção/segurança/estabilidade/
+performance/qualidade/deploy — sem novas funcionalidades. Documento
+completo em `docs/PRE_PRODUCAO.md`. Resumo:
+
+- **5 bugs reais encontrados e corrigidos**, o mais crítico sendo o
+  `base` do Vite (`vite.config.ts`) fixado em `/financeiro-leonardo/`
+  (convenção de GitHub Pages, sem evidência de uso real) — no Vercel,
+  que serve a aplicação na raiz do domínio, isso geraria uma **tela em
+  branco** em produção (todos os assets referenciados num caminho
+  inexistente). Corrigido para `/`, rebuild confirmado com os caminhos
+  certos.
+- Faltava `vercel.json` com rewrite de SPA — sem ele, qualquer rota
+  acessada diretamente (refresh, link direto) retornaria 404 do host.
+  Criado e testado localmente via `vite preview` (mesmo mecanismo de
+  fallback).
+- 1.089 linhas órfãs em `audit_logs` (`user_id is null`, resíduo de
+  usuários descartáveis de sessões de teste anteriores) removidas —
+  invisíveis via RLS mas violavam a regra de não deixar dado de teste
+  no banco.
+- A pendência de performance da sessão anterior (66 policies RLS com
+  `auth.uid()` não otimizado) foi **corrigida** nesta sessão via
+  migration aditiva (`ALTER POLICY`, sem recriar nenhuma policy),
+  retestada com `get_advisors` (0 ocorrências restantes) e com 2 novos
+  usuários descartáveis confirmando zero regressão de isolamento.
+- Adicionado um `ErrorBoundary` global (`src/components/shared/
+  error-boundary.tsx`) — não existia nenhuma proteção contra erro de
+  renderização não tratado, que resultaria em tela branca sem
+  recuperação.
+- **Todas as functions/triggers financeiras críticas foram lidas via
+  `pg_get_functiondef` e conferidas idênticas** ao texto já documentado
+  — nenhuma alteração de regra de negócio desde a Fase 4.
+- Teste end-to-end no build de produção local (`vite preview`):
+  cadastro de usuário descartável → login → criar receita de R$1.000,00
+  → saldo da conta e Dashboard e Relatórios mostrando exatamente
+  R$1.000,00 nos três lugares, sem erro de console. Usuário e dados de
+  teste removidos ao final.
+- Achados anteriores (FKs sem índice, índices não usados, sincronização
+  de `profiles.theme`/`currency`/`language`, `last-account-id` no
+  localStorage) foram **reavaliados, não simplesmente aceitos** —
+  mantidos como pendência real por decisão consciente, documentada com
+  o motivo em `docs/PRE_PRODUCAO.md` seção 4.
+- Vercel: nenhum projeto conectado foi encontrado via API na conta
+  atual (apesar do commit histórico `cb22baa` sugerir uma tentativa
+  anterior) — criação do projeto, variáveis de ambiente e configuração
+  de Site URL/Redirect URLs no Supabase Auth ficam como passos manuais
+  documentados, fora do alcance de um agente.

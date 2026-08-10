@@ -385,6 +385,14 @@ operação + `description: getErrorMessage(error)`. **Ao mapear uma nova
 constraint UNIQUE do banco, adicione a entrada em `CONSTRAINT_MESSAGES`
 em vez de deixar o usuário ver a mensagem crua do Postgres.**
 
+Erros de **renderização** (não de mutação/query) são cobertos por um
+`ErrorBoundary` global
+([`src/components/shared/error-boundary.tsx`](../src/components/shared/error-boundary.tsx)),
+adicionado na auditoria de pré-produção e envolvendo toda a árvore em
+`App.tsx`. Sem ele, um erro não tratado em qualquer componente resultava
+em tela branca sem recuperação — o boundary mostra uma tela de fallback
+com botão "Recarregar página" e loga o erro via `console.error`.
+
 ## 19. Convenções de nomenclatura
 
 - Arquivos: `kebab-case.ts(x)`, sufixo por camada

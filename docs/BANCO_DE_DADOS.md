@@ -863,28 +863,38 @@ criaram tabela, view, function nem trigger nova:
 - **Calendário** só lê `due_date`/`target_date`/`next_run_date` de 6
   tabelas/view já existentes, sem escrever em nenhuma.
 
-## 34. Achado de performance — `get_advisors`, não corrigido nesta sessão
+## 34. Achado de performance — `get_advisors` — CORRIGIDO na auditoria de pré-produção
 
-Auditoria final (`docs/MODULO_4.md` seção 55) rodou `get_advisors` tipo
-`performance` pela primeira vez de forma abrangente nesta Fase 4 e
-encontrou **66 ocorrências de "Auth RLS Initialization Plan"** — várias
-policies RLS do schema chamam `auth.uid()` diretamente em vez de
-`(select auth.uid())`, fazendo a function ser reavaliada linha a linha
-em vez de uma vez por query (otimização conhecida do Postgres/Supabase
-para RLS). A migration `0027` já aplicou esse padrão em `transactions`
-(Fase 3) — as demais tabelas do schema (a maioria das 24) ainda usam a
-forma não otimizada, uma lacuna que já existia desde a Fase 1, não
-introduzida por nenhum módulo desta Fase 4.
+Auditoria final da Fase 4 (`docs/MODULO_4.md` seção 55) encontrou **66
+ocorrências de "Auth RLS Initialization Plan"** — policies RLS que
+chamavam `auth.uid()` diretamente em vez de `(select auth.uid())`,
+reavaliando a function linha a linha em vez de uma vez por query. Não
+foi corrigido naquela sessão por prudência (mudança ampla, sessão já
+focada em finalizar módulos).
 
-**Não corrigido nesta sessão** — é uma mudança ampla (dezenas de
-policies em quase todas as tabelas), significativa demais para um
-ajuste apressado dentro de uma sessão focada em finalizar módulos.
-Requer sua própria sessão dedicada: revisar cada policy, reescrever com
-`(select auth.uid())`, testar RLS antes/depois de cada tabela. Impacto
-real no volume atual (app pessoal, não milhões de linhas) é baixo — não
-bloqueante, mas real e documentado para quando o projeto crescer ou
-para uma sessão de hardening futura.
+**Corrigido na sessão de pré-produção seguinte** (`docs/PRE_PRODUCAO.md`
+seção 2, achado #4) — migration `0037_rls_auth_uid_performance_optimization`
+reescreveu `qual`/`with_check` de todas as policies afetadas (schemas
+`public` e `storage`) via `ALTER POLICY`, sem recriar nenhuma policy e
+sem alterar semântica de segurança (`auth.uid()` é `STABLE`, mesmo
+resultado, só avaliado uma vez). Retestado com `get_advisors` (0
+ocorrências restantes) e com 2 usuários descartáveis novos (SELECT/
+UPDATE/DELETE cruzados em `accounts`/`budgets`/`investments`
+continuam bloqueados; acesso ao próprio dado continua funcionando).
 
-Também reportadas (mesma varredura, mesma decisão de não agir sem
-necessidade comprovada): 16 "Unindexed foreign keys" e 18 "Unused
-Index", ambas de baixo impacto no volume atual.
+Também reportados na mesma varredura, **mantidos como pendência** (não
+corrigidos, decisão consciente — ver `docs/PRE_PRODUCAO.md` seção 4):
+16 "Unindexed foreign keys" e 18 "Unused Index", ambos de baixo impacto
+no volume atual e melhor avaliados com dado real de uso em produção do
+que especulativamente.
+
+## 35. Limpeza de dados de teste — `audit_logs` órfãos
+
+A auditoria de pré-produção encontrou 1.089 linhas em `audit_logs` com
+`user_id is null` — resíduo de login/logout de usuários descartáveis de
+sessões de teste anteriores, cujo `user_id` virou `null` após o
+`DELETE` do usuário (`audit_logs_user_id_fkey` é `ON DELETE SET NULL`).
+Invisíveis a qualquer usuário via RLS, mas violavam a regra de não
+deixar dado de teste no banco. Removidas com `DELETE FROM audit_logs
+WHERE user_id IS NULL` (DML simples, não uma migration de schema).
+Detalhe completo em `docs/PRE_PRODUCAO.md` seção 2 e seção 5.
