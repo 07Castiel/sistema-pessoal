@@ -21,7 +21,7 @@ export const RECURRENCE_FREQUENCY_OPTIONS = [
   { value: "personalizada", label: "Personalizada" },
 ] as const
 
-const paymentMethodEnum = z.enum([
+export const paymentMethodEnum = z.enum([
   "dinheiro",
   "debito",
   "credito",

@@ -5,7 +5,6 @@ import { useAuth } from "@/hooks/use-auth"
 import { getErrorMessage } from "@/lib/errors"
 import type { TransactionFormValues } from "@/schemas/transaction.schema"
 import type { TransactionListFilters } from "@/repositories/transactions.repository"
-import type { Transaction } from "@/types"
 
 const KEY = "transactions"
 
@@ -14,7 +13,7 @@ const KEY = "transactions"
  * listagem. Centralizar a invalidação evita esquecer alguma superfície
  * e evita invalidar o app inteiro.
  */
-function useInvalidateTransactions() {
+export function useInvalidateTransactions() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: [KEY] })
@@ -86,8 +85,15 @@ export function useUpdateTransaction() {
   const invalidate = useInvalidateTransactions()
 
   return useMutation({
-    mutationFn: ({ id, values }: { id: string; values: TransactionFormValues }) =>
-      transactionsService.update(id, user!.id, values),
+    mutationFn: ({
+      id,
+      values,
+      previouslyPaidAmount,
+    }: {
+      id: string
+      values: TransactionFormValues
+      previouslyPaidAmount: number
+    }) => transactionsService.update(id, user!.id, values, previouslyPaidAmount),
     onSuccess: () => {
       invalidate()
       toast.success("Lançamento atualizado com sucesso!")
@@ -100,18 +106,18 @@ export function useUpdateTransaction() {
   })
 }
 
+/** Só cancelar/reativar — liquidar (total ou parcial) é sempre via
+ * `useCreateTransactionPayment`, nunca por aqui. */
 export function useSetTransactionStatus() {
   const invalidate = useInvalidateTransactions()
 
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: Transaction["status"] }) =>
+    mutationFn: ({ id, status }: { id: string; status: "pendente" | "cancelado" }) =>
       transactionsService.setStatus(id, status),
     onSuccess: (_data, { status }) => {
       invalidate()
       const messages: Record<string, string> = {
-        recebido: "Receita marcada como recebida",
-        pago: "Despesa marcada como paga",
-        pendente: "Lançamento voltou para pendente",
+        pendente: "Lançamento reativado",
         cancelado: "Lançamento cancelado",
       }
       toast.success(messages[status] ?? "Status atualizado")

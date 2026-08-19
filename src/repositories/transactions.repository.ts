@@ -11,6 +11,7 @@ import type { CardPurchaseFormValues } from "@/schemas/card-purchase.schema"
 export type StatusFilter =
   | "todos"
   | "pendente"
+  | "parcial"
   | "atrasado"
   | "pago"
   | "recebido"
@@ -51,9 +52,15 @@ export interface TransactionTotals {
   balance: number
 }
 
-/** Payload comum a criação e edição de um lançamento único. */
+/**
+ * Payload comum a criação e edição de um lançamento único. `status` não
+ * entra mais aqui: nasce/permanece "pendente" por padrão de coluna e é
+ * sempre derivado por `paid_amount` na trigger `sync_transaction_payment_state`
+ * (exceto a transição manual para "cancelado", feita por `setStatus`).
+ * `values.settled` é tratado em `transactions.service.ts::create`, que
+ * registra um pagamento cheio logo após a criação quando marcado.
+ */
 function toRow(userId: string, values: TransactionFormValues) {
-  const settledStatus = values.type === "receita" ? "recebido" : "pago"
   return {
     user_id: userId,
     type: values.type,
@@ -64,7 +71,6 @@ function toRow(userId: string, values: TransactionFormValues) {
     cost_center_id: values.cost_center_id,
     date: values.date,
     due_date: values.due_date,
-    status: (values.settled ? settledStatus : "pendente") as Transaction["status"],
     supplier: values.supplier || null,
     payment_method: values.payment_method,
     notes: values.notes || null,
@@ -124,11 +130,17 @@ export const transactionsRepository = {
 
     if (type !== "todos") query = query.eq("type", type)
 
-    // "pendente" = a vencer; "atrasado" = vencido. Tabs sem sobreposição.
+    // "pendente"/"parcial" = a vencer; "atrasado" = vencido (qualquer status
+    // ainda em aberto, pendente ou parcial, com due_date no passado — ver
+    // is_overdue na view). Tabs sem sobreposição.
     if (status === "atrasado") {
       query = query.eq("is_overdue", true)
     } else if (status === "pendente") {
       query = query.eq("status", "pendente").eq("is_overdue", false)
+    } else if (status === "parcial") {
+      query = query
+        .in("status", ["parcialmente_pago", "parcialmente_recebido"])
+        .eq("is_overdue", false)
     } else if (status !== "todos") {
       query = query.eq("status", status)
     }
@@ -166,16 +178,20 @@ export const transactionsRepository = {
     return { data: data ?? [], count: count ?? 0 }
   },
 
-  /** Totais do conjunto filtrado (independente da página). */
+  /**
+   * Totais do conjunto filtrado (independente da página). Soma
+   * `paid_amount`, não `amount` — cobre liquidação total e parcial da
+   * mesma forma, sem gate de status (uma transação pendente/cancelada já
+   * tem `paid_amount = 0`, então não precisa de filtro extra).
+   */
   async totals(userId: string, filters: TransactionListFilters): Promise<TransactionTotals> {
     const { dateFrom, dateTo, accountId = "todos" } = filters
 
     let query = supabase
       .from("transactions")
-      .select("type, amount")
+      .select("type, paid_amount")
       .eq("user_id", userId)
       .is("deleted_at", null)
-      .in("status", ["pago", "recebido"])
 
     if (dateFrom) query = query.gte("date", dateFrom)
     if (dateTo) query = query.lte("date", dateTo)
@@ -187,8 +203,8 @@ export const transactionsRepository = {
     let income = 0
     let expense = 0
     for (const row of data ?? []) {
-      if (row.type === "receita") income += Number(row.amount)
-      else expense += Number(row.amount)
+      if (row.type === "receita") income += Number(row.paid_amount)
+      else expense += Number(row.paid_amount)
     }
     return { income, expense, balance: income - expense }
   },
@@ -248,7 +264,16 @@ export const transactionsRepository = {
     return data
   },
 
-  async setStatus(id: string, status: Transaction["status"]): Promise<void> {
+  /**
+   * Só para as transições sem movimentação de dinheiro: cancelar e
+   * reativar. Liquidar (total ou parcial) é sempre via
+   * `transactionPaymentsRepository.create` — a trigger
+   * `sync_transaction_payment_state` deriva pago/recebido/parcial a partir
+   * de `paid_amount`, então gravar esses status diretamente aqui não teria
+   * efeito (seria sobrescrito). O banco também bloqueia cancelar com
+   * `paid_amount > 0`.
+   */
+  async setStatus(id: string, status: "pendente" | "cancelado"): Promise<void> {
     const { error } = await supabase.from("transactions").update({ status }).eq("id", id)
     if (error) throw error
   },
@@ -329,12 +354,16 @@ export const transactionsRepository = {
 
   /**
    * Transação de despesa comum que representa o pagamento de uma fatura —
-   * `account_id` setado, `status: "pago"`, passa pelo trigger de saldo
-   * normal (`apply_transaction_balance`), sem nenhum mecanismo novo.
-   * `invoice_id` fica de propósito fora do payload: se apontasse para a
-   * própria fatura, `recalc_invoice_total` somaria o pagamento de volta
-   * no total dela (`select sum(amount) from transactions where invoice_id
-   * = ...`), inflando o valor. Ver docs/MODULO_4.md.
+   * `account_id` setado, nasce no shape "pendente" (a trigger
+   * `sync_transaction_payment_state` deriva isso de `paid_amount = 0`).
+   * Quem efetivamente marca como paga e afeta o saldo da conta é a
+   * movimentação cheia registrada logo em seguida por
+   * `card-invoices.service.ts::payInvoice` — mesma fonte de verdade de
+   * qualquer pagamento parcial, sem mecanismo separado. `invoice_id` fica
+   * de propósito fora do payload: se apontasse para a própria fatura,
+   * `recalc_invoice_total` somaria o pagamento de volta no total dela
+   * (`select sum(amount) from transactions where invoice_id = ...`),
+   * inflando o valor. Ver docs/MODULO_4.md.
    */
   async createInvoiceSettlement(
     userId: string,
@@ -353,7 +382,6 @@ export const transactionsRepository = {
         date: new Date().toISOString().slice(0, 10),
         account_id: accountId,
         card_id: cardId,
-        status: "pago",
       })
       .select("*")
       .single()

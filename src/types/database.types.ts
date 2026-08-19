@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -73,13 +73,6 @@ export type Database = {
             referencedRelation: "v_transactions_enriched"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "account_reconciliations_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       accounts: {
@@ -131,15 +124,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "accounts_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       attachments: {
         Row: {
@@ -172,15 +157,7 @@ export type Database = {
           id?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "attachments_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       audit_logs: {
         Row: {
@@ -219,15 +196,7 @@ export type Database = {
           user_agent?: string | null
           user_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "audit_logs_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       budgets: {
         Row: {
@@ -279,13 +248,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "categories"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "budgets_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -351,13 +313,6 @@ export type Database = {
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "card_invoices_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       categories: {
@@ -411,13 +366,6 @@ export type Database = {
             referencedRelation: "categories"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "categories_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       cost_centers: {
@@ -448,15 +396,7 @@ export type Database = {
           name?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "cost_centers_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       credit_cards: {
         Row: {
@@ -515,13 +455,6 @@ export type Database = {
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "credit_cards_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       financing_installments: {
@@ -577,13 +510,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "financings"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "financing_installments_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -644,13 +570,6 @@ export type Database = {
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "financings_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       goal_contributions: {
@@ -688,13 +607,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "goals"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "goal_contributions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -752,13 +664,6 @@ export type Database = {
             referencedRelation: "categories"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "goals_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       investment_movements: {
@@ -799,13 +704,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "investments"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "investment_movements_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -869,13 +767,6 @@ export type Database = {
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "investments_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       loan_installments: {
@@ -922,13 +813,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "loans"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "loan_installments_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -992,13 +876,6 @@ export type Database = {
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "loans_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       notifications: {
@@ -1035,15 +912,7 @@ export type Database = {
           type?: Database["public"]["Enums"]["notification_type"]
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "notifications_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -1082,15 +951,7 @@ export type Database = {
           theme?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "profiles_id_fkey"
-            columns: ["id"]
-            isOneToOne: true
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       recurring_rules: {
         Row: {
@@ -1204,13 +1065,6 @@ export type Database = {
             referencedRelation: "v_transactions_enriched"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "recurring_rules_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       subscriptions: {
@@ -1291,13 +1145,6 @@ export type Database = {
             referencedRelation: "categories"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "subscriptions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       tags: {
@@ -1322,13 +1169,56 @@ export type Database = {
           name?: string
           user_id?: string
         }
+        Relationships: []
+      }
+      transaction_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          date: string
+          id: string
+          notes: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"] | null
+          transaction_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          date?: string
+          id?: string
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
+          transaction_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          date?: string
+          id?: string
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
+          transaction_id?: string
+          updated_at?: string
+          user_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "tags_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "transaction_payments_transaction_id_fkey"
+            columns: ["transaction_id"]
             isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transaction_payments_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "v_transactions_enriched"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1389,6 +1279,7 @@ export type Database = {
           invoice_id: string | null
           is_adjustment: boolean
           notes: string | null
+          paid_amount: number
           paid_date: string | null
           payment_method: Database["public"]["Enums"]["payment_method"] | null
           recurring_id: string | null
@@ -1417,6 +1308,7 @@ export type Database = {
           invoice_id?: string | null
           is_adjustment?: boolean
           notes?: string | null
+          paid_amount?: number
           paid_date?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"] | null
           recurring_id?: string | null
@@ -1445,6 +1337,7 @@ export type Database = {
           invoice_id?: string | null
           is_adjustment?: boolean
           notes?: string | null
+          paid_amount?: number
           paid_date?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"] | null
           recurring_id?: string | null
@@ -1504,13 +1397,6 @@ export type Database = {
             referencedRelation: "recurring_rules"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "transactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       transfers: {
@@ -1559,13 +1445,6 @@ export type Database = {
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "transfers_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
     }
@@ -1595,15 +1474,7 @@ export type Database = {
           used_amount?: never
           user_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "credit_cards_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       v_cash_flow_daily: {
         Row: {
@@ -1613,15 +1484,7 @@ export type Database = {
           outflow: number | null
           user_id: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "transactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       v_category_summary: {
         Row: {
@@ -1643,13 +1506,6 @@ export type Database = {
             referencedRelation: "categories"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "transactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
         ]
       }
       v_monthly_summary: {
@@ -1661,15 +1517,7 @@ export type Database = {
           user_id: string | null
           year: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "transactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       v_net_worth: {
         Row: {
@@ -1680,24 +1528,6 @@ export type Database = {
           total_payable_loans: number | null
           total_receivable_loans: number | null
           user_id: string | null
-        }
-        Insert: {
-          net_worth?: never
-          total_accounts?: never
-          total_financings?: never
-          total_investments?: never
-          total_payable_loans?: never
-          total_receivable_loans?: never
-          user_id?: string | null
-        }
-        Update: {
-          net_worth?: never
-          total_accounts?: never
-          total_financings?: never
-          total_investments?: never
-          total_payable_loans?: never
-          total_receivable_loans?: never
-          user_id?: string | null
         }
         Relationships: []
       }
@@ -1710,15 +1540,7 @@ export type Database = {
           type: Database["public"]["Enums"]["transaction_type"] | null
           user_id: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "transactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       v_transactions_enriched: {
         Row: {
@@ -1751,10 +1573,12 @@ export type Database = {
           is_adjustment: boolean | null
           is_overdue: boolean | null
           notes: string | null
+          paid_amount: number | null
           paid_date: string | null
           parent_category_name: string | null
           payment_method: Database["public"]["Enums"]["payment_method"] | null
           recurring_id: string | null
+          remaining_amount: number | null
           status: Database["public"]["Enums"]["transaction_status"] | null
           supplier: string | null
           tag_ids: string[] | null
@@ -1819,13 +1643,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "recurring_rules"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "transactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "v_net_worth"
-            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -1956,6 +1773,8 @@ export type Database = {
         | "recebido"
         | "cancelado"
         | "atrasado"
+        | "parcialmente_pago"
+        | "parcialmente_recebido"
       transaction_type: "receita" | "despesa"
     }
     CompositeTypes: {
@@ -2153,6 +1972,8 @@ export const Constants = {
         "recebido",
         "cancelado",
         "atrasado",
+        "parcialmente_pago",
+        "parcialmente_recebido",
       ],
       transaction_type: ["receita", "despesa"],
     },

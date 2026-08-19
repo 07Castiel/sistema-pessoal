@@ -3,7 +3,9 @@ import {
   ArchiveRestore,
   CalendarClock,
   Check,
+  Coins,
   Copy,
+  History,
   MoreVertical,
   Pencil,
   Repeat,
@@ -36,6 +38,8 @@ const STATUS_META: Record<
   { label: string; className: string; icon: typeof Check }
 > = {
   pendente: { label: "Pendente", className: "border-muted-foreground/30 text-muted-foreground", icon: CalendarClock },
+  parcialmente_pago: { label: "Parcialmente paga", className: "border-warning/40 bg-warning/10 text-warning", icon: Coins },
+  parcialmente_recebido: { label: "Parcialmente recebida", className: "border-warning/40 bg-warning/10 text-warning", icon: Coins },
   atrasado: { label: "Atrasado", className: "border-destructive/40 bg-destructive/10 text-destructive", icon: CalendarClock },
   pago: { label: "Pago", className: "border-success/40 bg-success/10 text-success", icon: Check },
   recebido: { label: "Recebido", className: "border-success/40 bg-success/10 text-success", icon: Check },
@@ -47,8 +51,9 @@ interface TransactionRowProps {
   trashed?: boolean
   onEdit: (t: TransactionEnriched) => void
   onDuplicate: (t: TransactionEnriched) => void
-  onSettle: (t: TransactionEnriched) => void
-  onUnsettle: (t: TransactionEnriched) => void
+  onRegisterPayment: (t: TransactionEnriched) => void
+  onViewHistory: (t: TransactionEnriched) => void
+  onReactivate: (t: TransactionEnriched) => void
   onCancel: (t: TransactionEnriched) => void
   onDelete: (t: TransactionEnriched) => void
   onRestore: (t: TransactionEnriched) => void
@@ -59,8 +64,9 @@ export const TransactionRow = memo(function TransactionRow({
   trashed = false,
   onEdit,
   onDuplicate,
-  onSettle,
-  onUnsettle,
+  onRegisterPayment,
+  onViewHistory,
+  onReactivate,
   onCancel,
   onDelete,
   onRestore,
@@ -69,8 +75,12 @@ export const TransactionRow = memo(function TransactionRow({
   const meta = STATUS_META[status] ?? STATUS_META.pendente
   const StatusIcon = meta.icon
   const isIncome = t.type === "receita"
-  const isSettled = status === "pago" || status === "recebido"
   const isCancelled = status === "cancelado"
+  const isFullySettled = status === "pago" || status === "recebido"
+  const isPartial = status === "parcialmente_pago" || status === "parcialmente_recebido"
+  const amount = Number(t.amount ?? 0)
+  const paidAmount = Number(t.paid_amount ?? 0)
+  const hasPayments = paidAmount > 0
   const tags = (t.tags as { id: string; name: string; color: string }[] | null) ?? []
 
   return (
@@ -128,6 +138,12 @@ export const TransactionRow = memo(function TransactionRow({
           {t.account_name ? ` · ${t.account_name}` : ""}
           {t.supplier ? ` · ${t.supplier}` : ""}
         </p>
+        {isPartial && (
+          <p className="truncate text-xs text-warning">
+            {isIncome ? "Recebido" : "Pago"} até agora: {formatCurrency(paidAmount)} de{" "}
+            {formatCurrency(amount)}
+          </p>
+        )}
       </div>
 
       <Badge variant="outline" className={cn("h-5 shrink-0 gap-1 px-1.5 text-[11px]", meta.className)}>
@@ -142,7 +158,7 @@ export const TransactionRow = memo(function TransactionRow({
         )}
       >
         {isIncome ? "+" : "−"}
-        {formatCurrency(Number(t.amount))}
+        {formatCurrency(amount)}
       </p>
 
       <DropdownMenu>
@@ -158,19 +174,19 @@ export const TransactionRow = memo(function TransactionRow({
             </DropdownMenuItem>
           ) : (
             <>
-              {!isSettled && !isCancelled && (
-                <DropdownMenuItem onClick={() => onSettle(t)}>
-                  <Check className="size-4" />
-                  {isIncome ? "Marcar como recebida" : "Marcar como paga"}
+              {!isCancelled && !isFullySettled && (
+                <DropdownMenuItem onClick={() => onRegisterPayment(t)}>
+                  <Coins className="size-4" />
+                  {isIncome ? "Registrar recebimento" : "Registrar pagamento"}
                 </DropdownMenuItem>
               )}
-              {isSettled && (
-                <DropdownMenuItem onClick={() => onUnsettle(t)}>
-                  <RotateCcw className="size-4" /> Voltar para pendente
+              {hasPayments && (
+                <DropdownMenuItem onClick={() => onViewHistory(t)}>
+                  <History className="size-4" /> Ver histórico
                 </DropdownMenuItem>
               )}
               {isCancelled && (
-                <DropdownMenuItem onClick={() => onUnsettle(t)}>
+                <DropdownMenuItem onClick={() => onReactivate(t)}>
                   <RotateCcw className="size-4" /> Reativar
                 </DropdownMenuItem>
               )}
@@ -180,7 +196,10 @@ export const TransactionRow = memo(function TransactionRow({
               <DropdownMenuItem onClick={() => onDuplicate(t)}>
                 <Copy className="size-4" /> Duplicar
               </DropdownMenuItem>
-              {!isCancelled && (
+              {/* Cancelar exige paid_amount = 0 (bloqueado no banco) — some
+                  do menu assim que existe algum pagamento, mesmo espírito de
+                  "Marcar como paga" sumir quando já liquidado. */}
+              {!isCancelled && !hasPayments && (
                 <DropdownMenuItem onClick={() => onCancel(t)}>
                   <XCircle className="size-4" /> Cancelar
                 </DropdownMenuItem>

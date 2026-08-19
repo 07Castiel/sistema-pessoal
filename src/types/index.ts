@@ -24,6 +24,7 @@ export type CreditCard = Tables<"credit_cards">
 export type CardInvoice = Tables<"card_invoices">
 export type RecurringRule = Tables<"recurring_rules">
 export type Transaction = Tables<"transactions">
+export type TransactionPayment = Tables<"transaction_payments">
 export type Transfer = Tables<"transfers">
 export type Subscription = Tables<"subscriptions">
 export type Investment = Tables<"investments">
@@ -49,7 +50,14 @@ export type CashFlowDaily = Views<"v_cash_flow_daily">
 export type PendingByDueDate = Views<"v_pending_by_due_date">
 
 /** Status derivado exibido na UI: o banco nunca grava "atrasado". */
-export type EffectiveStatus = "pendente" | "pago" | "recebido" | "cancelado" | "atrasado"
+export type EffectiveStatus =
+  | "pendente"
+  | "parcialmente_pago"
+  | "parcialmente_recebido"
+  | "pago"
+  | "recebido"
+  | "cancelado"
+  | "atrasado"
 
 export type AccountType = Enums<"account_type">
 export type AccountStatus = Enums<"account_status">

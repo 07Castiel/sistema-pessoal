@@ -72,7 +72,9 @@ function buildDefaults(
       // Ao duplicar, a data volta para hoje e o lançamento nasce pendente.
       date: isDuplicate ? today() : (source.date ?? today()),
       due_date: isDuplicate ? null : source.due_date,
-      settled: isDuplicate ? false : source.status === "pago" || source.status === "recebido",
+      // paid_amount > 0 (parcial ou total) — o switch fica desabilitado
+      // nesse caso (ver campo abaixo), então este valor é só informativo.
+      settled: isDuplicate ? false : Number(source.paid_amount ?? 0) > 0,
       supplier: source.supplier,
       payment_method: source.payment_method,
       notes: source.notes,
@@ -139,12 +141,17 @@ export function TransactionFormDialog({
 
   const { accounts, categoryTree, tags, costCenters } = useTransactionLookups(type)
   const isIncome = type === "receita"
+  const hasPayments = Number(transaction?.paid_amount ?? 0) > 0
 
   function onSubmit(values: TransactionFormValues) {
     setLastAccountId(values.account_id)
     if (isEditing) {
       updateTransaction.mutate(
-        { id: transaction.id!, values },
+        {
+          id: transaction.id!,
+          values,
+          previouslyPaidAmount: Number(transaction.paid_amount ?? 0),
+        },
         { onSuccess: () => onOpenChange(false) }
       )
     } else {
@@ -337,9 +344,11 @@ export function TransactionFormDialog({
                       {isIncome ? "Já recebida" : "Já paga"}
                     </FormLabel>
                     <FormDescription>
-                      {field.value
-                        ? "O saldo da conta será atualizado imediatamente."
-                        : "Ficará como pendente e não afetará o saldo."}
+                      {hasPayments
+                        ? "Este lançamento já tem pagamentos registrados — use o histórico de pagamentos para alterar isso."
+                        : field.value
+                          ? "O saldo da conta será atualizado imediatamente."
+                          : "Ficará como pendente e não afetará o saldo."}
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -347,7 +356,7 @@ export function TransactionFormDialog({
                       id="settled-switch"
                       checked={field.value}
                       onCheckedChange={field.onChange}
-                      disabled={repeat !== "none"}
+                      disabled={repeat !== "none" || hasPayments}
                     />
                   </FormControl>
                 </FormItem>

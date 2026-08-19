@@ -1,5 +1,6 @@
 import { cardInvoicesRepository } from "@/repositories/card-invoices.repository"
 import { transactionsRepository } from "@/repositories/transactions.repository"
+import { transactionPaymentsRepository } from "@/repositories/transaction-payments.repository"
 import { resolveInvoicePeriod } from "@/lib/card-invoice"
 import type { CreditCard } from "@/types"
 import type { CardPurchaseFormValues } from "@/schemas/card-purchase.schema"
@@ -33,10 +34,12 @@ export const cardInvoicesService = {
   },
 
   /**
-   * Cria a transação de pagamento primeiro (efeito real de saldo); só
-   * marca a fatura como paga se a transação foi criada com sucesso —
-   * evita marcar "paga" uma fatura cujo pagamento não foi efetivamente
-   * registrado.
+   * Cria a transação de pagamento (nasce pendente) e, na sequência, o
+   * pagamento do valor cheio — é essa movimentação que efetivamente marca a
+   * transação como paga e afeta o saldo da conta (mesma fonte de verdade de
+   * qualquer liquidação, total ou parcial). Só marca a fatura como paga
+   * depois dos dois passos terem sido bem-sucedidos — evita marcar "paga"
+   * uma fatura cujo pagamento não foi efetivamente registrado.
    */
   async payInvoice(
     userId: string,
@@ -45,13 +48,20 @@ export const cardInvoicesService = {
     accountId: string,
     totalAmount: number
   ) {
-    await transactionsRepository.createInvoiceSettlement(
+    const description = `Pagamento fatura ${card.name}`
+    const settlement = await transactionsRepository.createInvoiceSettlement(
       userId,
       card.id,
       accountId,
       totalAmount,
-      `Pagamento fatura ${card.name}`
+      description
     )
+    await transactionPaymentsRepository.create(userId, settlement.id, {
+      amount: totalAmount,
+      date: settlement.date,
+      payment_method: null,
+      notes: description,
+    })
     await cardInvoicesRepository.markAsPaid(invoiceId, accountId)
   },
 }

@@ -46,21 +46,71 @@ Receita e despesa são a mesma entidade (`transactions.type`).
 - O tipo (`receita`/`despesa`) **não pode ser alterado depois de criado**
   — campo desabilitado no formulário de edição
   (`transaction-form-dialog.tsx`); para trocar o tipo é preciso excluir e
-  recriar.
-- Duplicação: copia todos os campos exceto `id`/status — a cópia nasce
-  sempre `pendente`, com a data resetada para hoje, e as tags são
-  copiadas.
+  recriar. Desde a Fase 5, também bloqueado no banco quando
+  `paid_amount > 0` (defesa extra, não só no frontend).
+- Duplicação: copia todos os campos exceto `id`/status/`paid_amount` — a
+  cópia nasce sempre `pendente`, sem nenhuma movimentação, com a data
+  resetada para hoje, e as tags são copiadas.
+
+## 2a. Pagamentos parciais de Transações — **[UI]** (Fase 5)
+
+Uma receita ou despesa pode ser liquidada em várias movimentações
+("Registrar pagamento"/"Registrar recebimento", o texto varia por
+`type`), cada uma com valor, data, forma de pagamento e observação
+próprios — não só um acumulador. Modelo de dados completo em
+`BANCO_DE_DADOS.md` seção 20a.
+
+- **Valor total (`amount`) nunca muda** por causa de um pagamento parcial
+  — só `paid_amount` (derivado, soma de `transaction_payments`).
+- **Preenchimento inteligente:** o modal de "Registrar pagamento" abre
+  com o valor pré-preenchido igual ao saldo restante
+  (`amount - paid_amount`); o usuário reduz para registrar um valor
+  menor.
+- **Validação dupla:** o formulário (Zod, `transaction-payment.schema.ts`)
+  já rejeita um valor acima do restante antes de enviar; o banco
+  (trigger `validate_transaction_payment`) rejeita de novo,
+  independente do frontend, com a mesma mensagem — nunca confia só no
+  client. Concorrência: a trigger trava a transação pai
+  (`SELECT ... FOR UPDATE`) antes de validar, então dois pagamentos
+  simultâneos não conseguem juntos ultrapassar o saldo.
+- **Histórico:** cada pagamento é editável (valor/data/forma/observação)
+  e excluível individualmente, com confirmação ("Essa ação alterará o
+  saldo e o status deste lançamento"). Editar/excluir recalcula
+  `paid_amount`/status/saldo de conta automaticamente — nunca manual.
+- **Criar já "paga"/"recebida"** (switch `settled` no formulário) continua
+  funcionando em um passo só: a transação nasce pendente e uma
+  movimentação do valor cheio é registrada na sequência, mesma fonte de
+  verdade de um pagamento parcial normal. O switch fica **desabilitado
+  na edição** de uma transação que já tem `paid_amount > 0` — a partir
+  daí, só o histórico de pagamentos altera esse valor.
+- **"Voltar para pendente" não é mais uma ação direta.** Uma vez que
+  existe pelo menos um pagamento, reduzir `paid_amount` de volta a zero é
+  sempre consequência de excluir/editar movimentações pelo histórico —
+  não existe mais um botão "estornar" que zera o status isoladamente.
+- **Cancelar exige `paid_amount = 0`** (bloqueado no banco) — cancelar
+  uma transação com dinheiro já registrado exige excluir os pagamentos
+  primeiro. Ação "Cancelar" some do menu assim que há algum pagamento.
+- **Compras de cartão ficam de fora desta feature** de propósito — são
+  liquidadas coletivamente pelo pagamento da fatura (mecanismo já
+  existente, `recalc_invoice_total`), não individualmente; a trigger de
+  validação rejeita um pagamento parcial numa transação com `invoice_id`.
+- **Auditoria:** quem criou/alterou/excluiu cada pagamento é registrado
+  em `audit_logs` (mesma function genérica já usada em
+  `transactions`/`accounts`/`categories`/`recurring_rules`).
 
 ## 3. Receitas — **[UI]**
 
 Subconjunto de Transações com `type = "receita"`. Status possíveis:
-`pendente`, `recebido`, `cancelado`. **Nunca pode ficar `pago`**
-(trigger `validate_transaction_status`).
+`pendente`, `parcialmente_recebido`, `recebido`, `cancelado`. **Nunca
+pode ficar `pago`/`parcialmente_pago`** (trigger
+`sync_transaction_payment_state`, que deriva o status a partir de
+`type`+`paid_amount`).
 
 ## 4. Despesas — **[UI]**
 
 Subconjunto de Transações com `type = "despesa"`. Status possíveis:
-`pendente`, `pago`, `cancelado`. **Nunca pode ficar `recebido`**.
+`pendente`, `parcialmente_pago`, `pago`, `cancelado`. **Nunca pode ficar
+`recebido`/`parcialmente_recebido`**.
 
 ## 5. Transferências — **[Backend]**
 
@@ -74,24 +124,28 @@ rota nem repository (`transfers.repository.ts` não existe em
 
 ## 6. Status de transação — **[UI]**
 
-Enum `transaction_status`: `pendente`, `pago`, `recebido`, `cancelado`,
-`atrasado`.
+Enum `transaction_status`: `pendente`, `parcialmente_pago`,
+`parcialmente_recebido`, `pago`, `recebido`, `cancelado`, `atrasado`.
 
 - `atrasado` **nunca é gravado no banco** — é sempre derivado
-  (`status = 'pendente' AND due_date < current_date`, calculado na view
+  (`status IN ('pendente','parcialmente_pago','parcialmente_recebido')
+  AND due_date < current_date`, calculado na view
   `v_transactions_enriched` como `is_overdue`/`effective_status`). Motivo
   registrado em `MODULO_3.md`: um status armazenado exigiria um job
   diário e ficaria incorreto entre execuções; derivado, está sempre
   correto mesmo com o app fechado.
-- Transições permitidas: `pendente → recebido/pago` (liquidar),
-  `pendente → cancelado`, `recebido/pago → pendente` (estornar),
-  `cancelado → pendente` (reativar).
-- Transições bloqueadas: receita→`pago`, despesa→`recebido` (trigger
-  `validate_transaction_status`).
+- **Desde a Fase 5, o status é sempre derivado de `paid_amount`**
+  (trigger `sync_transaction_payment_state`, ver
+  `BANCO_DE_DADOS.md` seção 20a) — `pendente` sem nenhum pagamento,
+  `parcialmente_pago`/`parcialmente_recebido` com pagamento parcial,
+  `pago`/`recebido` quando `paid_amount` atinge `amount`. As únicas
+  transições manuais que restam são `pendente ↔ cancelado`
+  (cancelar/reativar), e cancelar exige `paid_amount = 0`.
 - Na UI, liquidar por padrão à criação: um lançamento novo (sem
   repetição) já nasce marcado como liquidado (`settled: true` por
   default em `transaction-form-dialog.tsx`) — o usuário desliga o switch
-  para deixar pendente.
+  para deixar pendente. Ao salvar, isso registra uma movimentação do
+  valor cheio (ver seção 2a), não grava o status diretamente.
 - Parcelamentos e recorrências **sempre nascem pendentes** — bloqueado
   explicitamente no schema Zod (`repeat !== "none" && settled` é erro de
   validação).
@@ -208,11 +262,14 @@ data da compra e do dia de fechamento do cartão (find-or-create sobre
 `docs/MODULO_4.md`, não uma regra pré-existente).
 
 **Pagar fatura:** cria uma segunda transação — despesa comum,
-`account_id` setado, `status: "pago"`, `invoice_id: null` de propósito
-(para não duplicar o total via `recalc_invoice_total`) — que debita a
-conta escolhida através do mecanismo de saldo já existente, sem nenhuma
-lógica nova. Fatura marcada `status: "paga"` só depois da transação ser
-criada com sucesso.
+`account_id` setado, `invoice_id: null` de propósito (para não duplicar o
+total via `recalc_invoice_total`). **Fase 5:** a transação nasce
+"pendente" e uma movimentação (`transaction_payments`) do valor cheio é
+registrada na sequência — é essa movimentação que efetivamente marca
+como "pago" e debita a conta escolhida, mesma fonte de verdade de
+qualquer pagamento parcial (seção 2a), sem lógica separada. Fatura
+marcada `status: "paga"` só depois dos dois passos serem concluídos com
+sucesso.
 
 **Limite de uso** (`v_card_usage`): soma `total_amount` das faturas
 `aberta`/`fechada` do cartão — faturas `paga` liberam o limite
@@ -335,14 +392,17 @@ duplicidade bloqueada com mensagem amigável.
 
 **"Realizado" nunca é escrito pelo frontend** — é sempre recalculado a
 partir de `v_category_summary` (mesma view/fonte de verdade usada no
-Dashboard), filtrada por `category_type='despesa'` no período. Isso é
-equivalente ao filtro que `check_budget_alerts` usa
-(`type='despesa' AND status='pago'`), porque uma categoria de despesa só
-pode ser usada em transações `type='despesa'`
-(`validate_transaction_references`). **Percentual utilizado, saldo
-restante e status (sob controle/atenção/estourado)** são sempre
-derivados na renderização a partir de planejado × realizado — nunca
-armazenados.
+Dashboard), filtrada por `category_type='despesa'` no período. **Fase 5:**
+`v_category_summary` passou a somar `paid_amount` (`WHERE paid_amount >
+0`), então um pagamento parcial de uma despesa orçada já conta como
+"realizado" a partir do primeiro pagamento, não só quando 100% quitada —
+efeito colateral esperado e correto da mudança de fonte de verdade
+(seção 2a), não um caso especial tratado aqui. `check_budget_alerts`
+(trigger) foi atualizada junto, também somando `paid_amount`, para não
+divergir de `v_category_summary` (`BANCO_DE_DADOS.md` seção 20a).
+**Percentual utilizado, saldo restante e status (sob controle/atenção/
+estourado)** são sempre derivados na renderização a partir de planejado ×
+realizado — nunca armazenados.
 
 **Alertas:** faixas visuais no próprio card (verde <50%, amarelo
 50–90%, vermelho ≥90%) refletem o "realizado" ao vivo. Além disso, a

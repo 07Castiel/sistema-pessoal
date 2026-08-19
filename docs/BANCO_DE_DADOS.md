@@ -1,13 +1,18 @@
 # Banco de Dados — Meu Financeiro
 
 > Derivado de `src/types/database.types.ts` (tipos gerados pelo Supabase
-> MCP, fonte de verdade estrutural — 24 tabelas, 7 views, 6 functions
+> MCP, fonte de verdade estrutural — 25 tabelas, 7 views, 6 functions
 > expostas, 18 enums, todos transcritos diretamente do arquivo, sem
 > suposição) e de `docs/CONTEXTO_PROJETO.md`/`docs/MODULO_3.md` para
 > histórico de migrations, RLS, segurança e decisões de design que não
 > aparecem no arquivo de tipos. Não existe pasta `supabase/migrations`
-> local — todas as migrations foram aplicadas remotamente via MCP. Este
-> documento **não cria nem sugere nenhuma migration nova.**
+> local — todas as migrations foram aplicadas remotamente via MCP.
+>
+> **Atualizado na Fase 5 (Pagamentos Parciais)**: migrations `0038`–`0048`
+> adicionaram `transaction_payments` (histórico granular de pagamentos),
+> `transactions.paid_amount`, os status `parcialmente_pago`/
+> `parcialmente_recebido`, e reformularam o mecanismo de saldo/status para
+> derivar de pagamentos em vez de um campo binário. Ver seção 20a.
 
 ---
 
@@ -41,12 +46,14 @@ apagada, faixas conforme `docs/CONTEXTO_PROJETO.md` seção 5:
 | `0035` | `cost_centers_active_flag` — coluna `active` em `cost_centers` |
 | `0036` | `validate_transaction_invoice_ownership` — Fase 4, ownership de `invoice_id` (seção 31) |
 | `fix_v_net_worth_auth_users_permission` | Fase 4, módulo Relatórios — corrige `v_net_worth` quebrada (bug real, não vulnerabilidade), seção 32. Aplicada sem prefixo numérico por engano (deveria ser `0037_...`) — funcionalmente idêntica, só o nome foge da convenção. |
+| `0037` | `rls_auth_uid_performance_optimization` — pré-produção, ver seção 34. |
+| `0038`–`0048` | Fase 5 (Pagamentos Parciais) — nova tabela `transaction_payments`, `transactions.paid_amount`, novos status, saldo/status derivados de pagamentos, backfill, reescrita das 4 views financeiras + `v_transactions_enriched`. Ver seção 20a. |
 
-Este documento **não altera nem cria nenhuma migration**. Qualquer
+Este documento **não altera nem cria nenhuma migration por conta própria**. Qualquer
 mudança de schema deve passar por `list_migrations` do MCP do Supabase
 primeiro, para não duplicar ou colidir com o que já existe.
 
-## 4. Tabelas (24, todas em `public`, todas com RLS)
+## 4. Tabelas (25, todas em `public`, todas com RLS)
 
 Lista completa com colunas exatas, extraída de
 `src/types/database.types.ts`:
@@ -59,8 +66,9 @@ Lista completa com colunas exatas, extraída de
 | `categories` | `id, user_id, name, type, icon, color, parent_id, sort_order, is_default, deleted_at, created_at, updated_at` | Hierarquia de 1 nível (`parent_id` aponta só para categoria raiz), soft delete |
 | `cost_centers` | `id, user_id, name, color, icon, active, created_at` | **Sem `deleted_at`** — exclusão é `DELETE` físico; `active` (migration `0035`) para ativar/desativar sem apagar |
 | `tags` | `id, user_id, name, color, created_at` | **Sem `deleted_at`** — exclusão é `DELETE` físico. `UNIQUE(user_id, name)` (constraint `tags_user_id_name_key`) |
-| `transactions` | `id, user_id, type, description, amount, category_id, account_id, cost_center_id, supplier, payment_method, card_id, invoice_id, date, due_date, paid_date, status, recurring_id, installment_group_id, installment_number, installment_total, notes, is_adjustment, currency, deleted_at, created_at, updated_at` | Núcleo do sistema — ver seção 20 |
+| `transactions` | `id, user_id, type, description, amount, paid_amount, category_id, account_id, cost_center_id, supplier, payment_method, card_id, invoice_id, date, due_date, paid_date, status, recurring_id, installment_group_id, installment_number, installment_total, notes, is_adjustment, currency, deleted_at, created_at, updated_at` | Núcleo do sistema — ver seção 20. `paid_amount` (Fase 5) é 100% derivado de `transaction_payments`, nunca escrito pelo frontend — ver seção 20a |
 | `transaction_tags` | `transaction_id, tag_id` | M:N, sem PK própria além do par (composto), sem `user_id` direto — ownership validado por subquery via `transaction_id`/`tag_id` |
+| `transaction_payments` | `id, transaction_id, user_id, amount, date, payment_method, notes, created_at, updated_at` | Fase 5 — histórico granular de cada pagamento/recebimento parcial de uma transação. `ON DELETE CASCADE` a partir de `transactions`. Ver seção 20a |
 | `recurring_rules` | `id, user_id, type, description, amount, category_id, account_id, cost_center_id, supplier, payment_method, frequency, interval_days, start_date, end_date, next_run_date, lead_days, active, last_generated_transaction_id, notes, currency, deleted_at, created_at, updated_at` | Template de recorrência — ver seção 22 |
 | `attachments` | `id, user_id, entity_type, entity_id, file_name, file_url, file_size, created_at` | Polimórfica (`entity_type` é `text`, não enum do banco) |
 | `credit_cards` | `id, user_id, account_id, name, bank, brand, credit_limit, closing_day, due_day, color, icon, status, created_at, updated_at` | Schema pronto, **sem UI** (`/cartoes` é `ComingSoon`) |
@@ -122,20 +130,20 @@ referência quebrada.
 | `payment_method` | `dinheiro`, `debito`, `credito`, `pix`, `boleto`, `transferencia`, `outro` |
 | `priority_level` | `baixa`, `media`, `alta` |
 | `recurrence_frequency` | `mensal`, `semanal`, `anual`, `quinzenal`, `personalizada`, `bimestral`, `trimestral`, `semestral` |
-| `transaction_status` | `pendente`, `pago`, `recebido`, `cancelado`, `atrasado` (`atrasado` nunca é gravado — seção 20) |
+| `transaction_status` | `pendente`, `parcialmente_pago`, `parcialmente_recebido`, `pago`, `recebido`, `cancelado`, `atrasado` (`atrasado` nunca é gravado — seção 20; os 2 valores `parcialmente_*` adicionados na Fase 5 via `ALTER TYPE ... ADD VALUE`, migration `0039` isolada — mesmo motivo/precedente de `0029_add_recurrence_frequencies`: Postgres não deixa usar um valor recém-criado na mesma transação que o cria) |
 | `transaction_type` | `receita`, `despesa` (só esses dois, de propósito — seção 20) |
 
 ## 7. Views (7, todas `security_invoker = true`)
 
 | View | Colunas (resumo) | Uso no frontend |
 |---|---|---|
-| `v_monthly_summary` | `user_id, year, month, total_income, total_expense, balance` | Gráfico de barras do dashboard (`dashboardRepository.getMonthlySummaries`) |
-| `v_category_summary` | `user_id, year, month, category_id, category_name, category_icon, category_color, category_type, total_amount` | Gráfico de pizza do dashboard, por tipo (`getCategorySummary`) |
-| `v_net_worth` | `user_id, total_accounts, total_investments, total_payable_loans, total_receivable_loans, total_financings, net_worth` | `dashboardRepository.getNetWorth`, `reportsRepository.getNetWorth` — patrimônio líquido. **Corrigida na Fase 4/Relatórios — ver seção 32, era inutilizável para qualquer usuário `authenticated` antes da correção.** |
+| `v_monthly_summary` | `user_id, year, month, total_income, total_expense, balance` | Gráfico de barras do dashboard (`dashboardRepository.getMonthlySummaries`). **Fase 5:** soma `paid_amount` (não mais `amount` filtrado por status exato) — cobre parcial e total sem gate de status |
+| `v_category_summary` | `user_id, year, month, category_id, category_name, category_icon, category_color, category_type, total_amount` | Gráfico de pizza do dashboard, por tipo (`getCategorySummary`). **Fase 5:** soma `paid_amount`, filtro `WHERE paid_amount > 0` (generaliza o antigo `status IN (pago,recebido)`) — também é o "realizado" de Orçamento, que passa a contar parciais |
+| `v_net_worth` | `user_id, total_accounts, total_investments, total_payable_loans, total_receivable_loans, total_financings, net_worth` | `dashboardRepository.getNetWorth`, `reportsRepository.getNetWorth` — patrimônio líquido. **Corrigida na Fase 4/Relatórios — ver seção 32, era inutilizável para qualquer usuário `authenticated` antes da correção.** Sem mudança na Fase 5 (deriva de `accounts.current_balance`, já correto via seção 19) |
 | `v_card_usage` | `card_id, user_id, name, credit_limit, used_amount, available_limit` | `credit-cards.repository.ts` (Fase 4, Cartões) |
-| `v_transactions_enriched` | Todas as colunas de `transactions` + `account_name/color/icon`, `category_name/color/icon/parent_id/parent_category_name`, `cost_center_name/color`, `tags` (jsonb), `tag_ids` (uuid[]), `is_overdue`, `effective_status` | Listagem principal de Transações, dashboard (recentes/a vencer/atrasadas) |
-| `v_cash_flow_daily` | `user_id, date, inflow, outflow, net` | `reportsRepository.getCashFlow` (Fase 4, Relatórios) — único filtro `deleted_at IS NULL` entre as 4 views financeiras, ver seção 32 |
-| `v_pending_by_due_date` | `user_id, type, due_date, is_overdue, items, total` | `dashboardRepository.getPendingSummary` — 4 KPIs de pendências |
+| `v_transactions_enriched` | Todas as colunas de `transactions` (incl. `paid_amount`) + `remaining_amount` (Fase 5, `amount - paid_amount`) + `account_name/color/icon`, `category_name/color/icon/parent_id/parent_category_name`, `cost_center_name/color`, `tags` (jsonb), `tag_ids` (uuid[]), `is_overdue`, `effective_status` | Listagem principal de Transações, dashboard (recentes/a vencer/atrasadas). **Fase 5:** `is_overdue`/`effective_status` passam a considerar `parcialmente_pago`/`parcialmente_recebido` como "ainda em aberto", igual a `pendente` |
+| `v_cash_flow_daily` | `user_id, date, inflow, outflow, net` | `reportsRepository.getCashFlow` (Fase 4, Relatórios). **Reescrita na Fase 5**: antes lia `transactions.paid_date`/`amount` (uma data por transação); agora lê `transaction_payments.date`/`.amount` via JOIN com `transactions` — reflete a data de cada pagamento individual, não uma data única da transação. Continua filtrando `deleted_at IS NULL` (do lado de `transactions`) |
+| `v_pending_by_due_date` | `user_id, type, due_date, is_overdue, items, total` | `dashboardRepository.getPendingSummary` — 4 KPIs de pendências. **Fase 5:** inclui `parcialmente_pago`/`parcialmente_recebido` no filtro, `total` soma `amount - paid_amount` (restante), não mais o valor cheio |
 
 `security_invoker = true` confirmado em `CONTEXTO_PROJETO.md` seção 9 —
 todas respeitam o RLS das tabelas base, nenhuma vaza dado entre usuários
@@ -291,15 +299,24 @@ modelo de **delta**:
 UPDATE → saldo −= efeito(OLD); saldo += efeito(NEW)
 ```
 
-`_transaction_balance_effect(t transactions) RETURNS numeric`:
+`_transaction_balance_effect(t transactions) RETURNS numeric` (**reescrita na
+Fase 5** — antes era binária por `status`, agora é contínua por
+`paid_amount`; ver seção 20a para o motivo completo):
 
 ```
 account_id IS NULL          → 0
 deleted_at IS NOT NULL      → 0
-receita  + recebido         → +amount
-despesa  + pago             → −amount
+receita                     → +paid_amount
+despesa                     → −paid_amount
 qualquer outro caso         →  0
 ```
+
+A fórmula antiga (`receita+recebido → +amount`, `despesa+pago → −amount`,
+resto `0`) era um caso especial desta: como `paid_amount` só chegava ao
+valor cheio quando o status virava `pago`/`recebido` (não existia
+liquidação parcial), o resultado é idêntico para todo dado que já existia
+antes da Fase 5 — a migration de backfill (`0044`) garante isso
+explicitamente (saldo de conta verificado idêntico antes/depois).
 
 Como o trigger é delta e a function retorna `0` para linhas com
 `deleted_at IS NOT NULL`, **soft delete e restauração ficam corretos
@@ -350,17 +367,22 @@ tabelas. `transaction_type` tem só `receita`/`despesa` de propósito —
 transferência, pagamento de fatura, aporte/rendimento de investimento já
 têm modelagem própria ou são casos de uso desses dois tipos.
 
-**Status** (`transaction_status`): `pendente`, `recebido` (receita
-liquidada), `pago` (despesa liquidada), `cancelado`. `atrasado` nunca é
-gravado — é derivado na view (`status = 'pendente' AND due_date IS NOT
-NULL AND due_date < current_date`), sempre correto mesmo com o app
-fechado. `validate_transaction_status` recusa gravar `atrasado`
-diretamente.
+**Status** (`transaction_status`): `pendente`, `parcialmente_recebido`,
+`recebido` (receita liquidada), `parcialmente_pago`, `pago` (despesa
+liquidada), `cancelado`. `atrasado` nunca é gravado — é derivado na view
+(`status = ANY('pendente','parcialmente_pago','parcialmente_recebido') AND
+due_date IS NOT NULL AND due_date < current_date`), sempre correto mesmo
+com o app fechado. **Desde a Fase 5, o status não é mais gravado
+diretamente pelo frontend** (exceto `cancelado`/reativação) — é sempre
+derivado de `paid_amount` pela trigger `sync_transaction_payment_state`.
+Ver seção 20a.
 
-**Transições permitidas:** `pendente → recebido/pago` (liquidar),
-`pendente → cancelado`, `recebido/pago → pendente` (estornar),
-`cancelado → pendente` (reativar). Bloqueadas: receita com `pago`,
-despesa com `recebido`.
+**Transições:** `cancelado`/reativação (`pendente ↔ cancelado`) continuam
+manuais, via `setStatus`. Todas as outras transições (`pendente →
+parcial → pago/recebido`, e o caminho inverso ao excluir pagamentos) são
+automáticas, derivadas de `paid_amount` — não existe mais um `setStatus`
+para `pago`/`recebido`/`parcial` diretamente. Bloqueado: cancelar com
+`paid_amount > 0` (peça para excluir os pagamentos primeiro).
 
 ### Compatibilidade de categoria × tipo de transação
 
@@ -382,6 +404,93 @@ auditoria), `0028` (views enriquecida/fluxo de caixa/pendências), `0029`
 (novas frequências), `0030` (campos de template em `recurring_rules`),
 `0031` (RPCs de parcelamento e recorrência), `0032` (move `pg_trgm` para
 `extensions`), `0033` (tags agregadas na view enriquecida).
+
+## 20a. Pagamentos parciais (Fase 5)
+
+Uma transação (receita ou despesa) pode ser liquidada em várias
+movimentações — cada uma com seu próprio valor, data, forma de pagamento
+e observação — em vez de tudo-ou-nada. Migrations `0038`–`0048`.
+
+### Tabela `transaction_payments`
+
+`id, transaction_id (FK, ON DELETE CASCADE), user_id, amount (> 0), date,
+payment_method (reaproveita o enum existente), notes, created_at,
+updated_at`. RLS com 4 policies (`user_id = (select auth.uid())`). Trigger
+de `updated_at` (`set_updated_at`, já existente) e de auditoria
+(`audit_trigger_fn`, já existente — 5ª tabela a usá-la, junto de
+`transactions`/`accounts`/`categories`/`recurring_rules`). Índices em
+`transaction_id`, `user_id`, `date`.
+
+### Cadeia de triggers
+
+1. **`trg_validate_transaction_payment`** (`BEFORE INSERT OR UPDATE ON
+   transaction_payments`, `SECURITY INVOKER`): faz `SELECT ... FOR UPDATE`
+   na transação pai (trava a linha — é isso que impede duas inserções
+   concorrentes ultrapassarem juntas o saldo restante, mesmo idioma de
+   `reconcile_account`/`generate_due_recurrences`), valida que a transação
+   existe (RLS de `transactions` já filtra por dono — `transaction_id` de
+   outro usuário simplesmente não é encontrado), não está excluída, não
+   está `cancelado`, não tem `invoice_id` (compras de cartão são
+   liquidadas coletivamente pela fatura, ficam de fora desta feature de
+   propósito), bloqueia reatribuir `transaction_id`/`user_id` num UPDATE, e
+   valida `soma das outras movimentações + valor novo <= amount`, senão
+   `raise exception 'O valor informado excede o saldo restante deste
+   lançamento.'`.
+2. **`trg_recalc_transaction_paid_amount`** (`AFTER INSERT OR UPDATE OR
+   DELETE ON transaction_payments`): `UPDATE transactions SET paid_amount
+   = SUM(transaction_payments.amount) WHERE id = affected` — mesmo molde
+   de `recalc_goal_amount`.
+3. **`trg_sync_transaction_payment_state`** (`BEFORE INSERT OR UPDATE ON
+   transactions` — substitui as antigas `trg_normalize_transaction_paid_date`
+   e `trg_validate_transaction_status`, consolidadas numa função só):
+   deriva `status` a partir de `type`+`paid_amount` (`pendente` se
+   `paid_amount = 0`; `parcialmente_pago`/`parcialmente_recebido` se
+   `0 < paid_amount < amount`; `pago`/`recebido` se `paid_amount >=
+   amount`) — exceto quando `new.status = 'cancelado'`, preservado como
+   está (mesmo espírito de `check_goal_completion`, que sobrescreve
+   `goals.status` sem rejeitar). Também deriva `paid_date` (data do
+   pagamento mais recente, ou `null` se `paid_amount = 0`), bloqueia
+   `atrasado` gravado direto, bloqueia cancelar com `paid_amount > 0`,
+   bloqueia mudar `type` com `paid_amount > 0`.
+   **Motivo de estarem consolidadas numa função só:** Postgres dispara
+   triggers `BEFORE` do mesmo evento em ordem alfabética de nome — as duas
+   antigas, separadas, deixariam `paid_date` ler um `status` desatualizado
+   dependendo do nome de cada trigger. Achado durante a implementação
+   desta fase.
+
+Como o passo 2 faz um `UPDATE transactions`, ele dispara o passo 3
+(deriva status/paid_date) e, em cascata, `trg_transactions_balance`
+(saldo, seção 19) e `trg_check_budget_alerts` (seção 21 de
+`REGRAS_DE_NEGOCIO.md`) — um único INSERT em `transaction_payments`
+propaga corretamente para saldo, status, orçamento e todas as views, sem
+nenhum código duplicado em cada consumidor.
+
+### Backfill (migration `0044`)
+
+Para cada transação já `pago`/`recebido` antes desta fase, uma
+`transaction_payments` sintética de valor cheio foi inserida (data =
+`paid_date` ou `date`, forma de pagamento herdada). Sequenciado com
+cuidado: rodou **antes** da migration que troca `_transaction_balance_effect`
+para a fórmula nova (seção 19) — como `status` não muda nesse UPDATE de
+backfill, o trigger de saldo calcula delta zero sob a fórmula antiga,
+então nenhum saldo de conta real foi tocado. Verificado por query
+antes/depois (saldos idênticos).
+
+### Pontos que passaram a criar uma movimentação em vez de status direto
+
+- **`reconcile_account`** (RPC): a transação de ajuste nasce no shape
+  "pendente" e uma `transaction_payments` cheia (`notes = 'Ajuste de
+  reconciliação'`) é inserida na sequência, dentro da mesma execução
+  PL/pgSQL (continua atômico).
+- **Criar uma transação já "paga" pelo formulário** (`settled: true`) e
+  **pagar fatura de cartão** (`createInvoiceSettlement`): ambos agora são
+  orquestrados no frontend (`transactions.service.ts`,
+  `card-invoices.service.ts`) — criam a transação e, na sequência, uma
+  `transaction_payments` cheia. Não são atômicos (2 chamadas sequenciais
+  do client, mesmo padrão não-atômico já aceito neste projeto para
+  `payInvoice`), mas o status "pago" nunca existe sem a movimentação
+  correspondente por mais que um instante — se a 2ª chamada falhar, a
+  transação fica visivelmente pendente, nunca "pago fantasma".
 
 ## 21. Parcelamentos
 

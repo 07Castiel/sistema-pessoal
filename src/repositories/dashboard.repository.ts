@@ -87,7 +87,9 @@ export const dashboardRepository = {
       .select("*")
       .eq("user_id", userId)
       .is("deleted_at", null)
-      .eq("status", "pendente")
+      // Pendente ou parcial: uma conta parcialmente paga continua "a
+      // vencer" até ser 100% quitada, não some no primeiro pagamento.
+      .in("status", ["pendente", "parcialmente_pago", "parcialmente_recebido"])
       .eq("is_overdue", false)
       .not("due_date", "is", null)
       .gte("due_date", today)

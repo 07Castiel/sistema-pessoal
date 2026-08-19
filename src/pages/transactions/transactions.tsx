@@ -30,6 +30,8 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { TransactionsFilters } from "@/components/transactions/transactions-filters"
 import { TransactionRow } from "@/components/transactions/transaction-row"
 import { TransactionFormDialog } from "@/components/transactions/transaction-form-dialog"
+import { RegisterPaymentDialog } from "@/components/transactions/register-payment-dialog"
+import { TransactionPaymentsSheet } from "@/components/transactions/transaction-payments-sheet"
 
 const PAGE_SIZE = 20
 
@@ -38,6 +40,7 @@ const TABS: { value: string; label: string; patch: Partial<TransactionListFilter
   { value: "receitas", label: "Receitas", patch: { type: "receita", status: "todos" } },
   { value: "despesas", label: "Despesas", patch: { type: "despesa", status: "todos" } },
   { value: "pendentes", label: "Pendentes", patch: { type: "todos", status: "pendente" } },
+  { value: "parciais", label: "Parciais", patch: { type: "todos", status: "parcial" } },
   { value: "atrasadas", label: "Atrasadas", patch: { type: "todos", status: "atrasado" } },
   { value: "canceladas", label: "Canceladas", patch: { type: "todos", status: "cancelado" } },
 ]
@@ -76,6 +79,9 @@ export default function TransactionsPage() {
   const [formType, setFormType] = useState<TransactionType>("despesa")
   const [deleteTarget, setDeleteTarget] = useState<TransactionEnriched | null>(null)
   const [cancelTarget, setCancelTarget] = useState<TransactionEnriched | null>(null)
+  const [payTarget, setPayTarget] = useState<TransactionEnriched | null>(null)
+  const [historyTarget, setHistoryTarget] = useState<TransactionEnriched | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const queryFilters = useMemo(
     () => ({ ...filters, search: debouncedSearch }),
@@ -156,8 +162,13 @@ export default function TransactionsPage() {
   const total = data?.count ?? 0
   const hasSearchOrFilters = !!debouncedSearch || activeFilterCount > 0
 
-  function handleSettle(t: TransactionEnriched) {
-    setStatus.mutate({ id: t.id!, status: t.type === "receita" ? "recebido" : "pago" })
+  function openRegisterPayment(t: TransactionEnriched) {
+    setPayTarget(t)
+  }
+
+  function openHistory(t: TransactionEnriched) {
+    setHistoryTarget(t)
+    setHistoryOpen(true)
   }
 
   return (
@@ -183,7 +194,7 @@ export default function TransactionsPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard
-          label="Receitas (liquidadas)"
+          label="Receitas (recebido)"
           value={formatCurrency(totals?.income ?? 0)}
           icon={ArrowUpCircle}
           tone="success"
@@ -191,7 +202,7 @@ export default function TransactionsPage() {
           hint={filters.dateFrom || filters.dateTo ? "No período filtrado" : "Todo o histórico"}
         />
         <KpiCard
-          label="Despesas (liquidadas)"
+          label="Despesas (pago)"
           value={formatCurrency(totals?.expense ?? 0)}
           icon={ArrowDownCircle}
           tone="destructive"
@@ -272,8 +283,9 @@ export default function TransactionsPage() {
                   trashed={filters.trashed}
                   onEdit={openEdit}
                   onDuplicate={openDuplicate}
-                  onSettle={handleSettle}
-                  onUnsettle={(x) => setStatus.mutate({ id: x.id!, status: "pendente" })}
+                  onRegisterPayment={openRegisterPayment}
+                  onViewHistory={openHistory}
+                  onReactivate={(x) => setStatus.mutate({ id: x.id!, status: "pendente" })}
                   onCancel={setCancelTarget}
                   onDelete={setDeleteTarget}
                   onRestore={(x) => restore.mutate(x.id!)}
@@ -299,11 +311,26 @@ export default function TransactionsPage() {
         defaultType={formType}
       />
 
+      {payTarget && (
+        <RegisterPaymentDialog
+          key={payTarget.id}
+          open={!!payTarget}
+          onOpenChange={(open) => !open && setPayTarget(null)}
+          transaction={payTarget}
+        />
+      )}
+
+      <TransactionPaymentsSheet
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        transaction={historyTarget}
+      />
+
       <ConfirmDialog
         open={!!cancelTarget}
         onOpenChange={(open) => !open && setCancelTarget(null)}
         title="Cancelar lançamento"
-        description={`Cancelar "${cancelTarget?.description}"? Se estiver liquidado, o valor será revertido no saldo da conta.`}
+        description={`Cancelar "${cancelTarget?.description}"? O lançamento ficará marcado como cancelado.`}
         confirmLabel="Cancelar lançamento"
         cancelLabel="Voltar"
         loading={setStatus.isPending}
